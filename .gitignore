@@ -1,0 +1,27 @@
+# ts
+*.js
+*.d.ts
+!rollup.config.js
+
+# build files
+build
+
+# yarn
+node_modules
+yarn-error.log
+
+# CDK assets
+.cdk.staging
+cdk.out
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/*
+
+# System Files
+.DS_Store
+Thumbs.db
