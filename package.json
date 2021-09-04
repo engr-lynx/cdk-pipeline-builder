@@ -1,24 +1,19 @@
 {
   "name": "@engr-lynx/cdk-pipeline-builder",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "pipeline builder for CDK typescript",
-  "main": "build/index.js",
-  "module": "build/index.es.js",
-  "jsnext:main": "build/index.es.js",
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
   "scripts": {
-    "build": "rollup -c",
+    "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "files": [
     "build"
   ],
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^20.0.0",
-    "@rollup/plugin-json": "^4.1.0",
-    "@rollup/plugin-node-resolve": "^13.0.4",
-    "rollup": "^2.56.3",
-    "rollup-plugin-peer-deps-external": "^2.2.4",
-    "rollup-plugin-typescript2": "^0.30.0",
+    "@types/node": "^16.7.10",
+    "ts-node": "^10.2.1",
     "typescript": "^4.4.2"
   },
   "dependencies": {

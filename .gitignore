@@ -1,7 +1,6 @@
 # ts
 *.js
 *.d.ts
-!rollup.config.js
 
 # build files
 build
