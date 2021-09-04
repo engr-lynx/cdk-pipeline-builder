@@ -736,10 +736,10 @@
   dependencies:
     "@cspotcode/source-map-consumer" "0.8.0"
 
-"@engr-lynx/cdk-service-patterns@^0.1.1":
-  version "0.1.1"
-  resolved "https://registry.yarnpkg.com/@engr-lynx/cdk-service-patterns/-/cdk-service-patterns-0.1.1.tgz#6268cec65a00cda40d6a43caf63b2a888d023fd9"
-  integrity sha512-55gXrlfpW3NDkgb51rtZgoCuhPcZbiaT6xxtzaMGHnpK0g8aHKm0eC4KQ4Z+g5Z+eQzeK+/jXXJ5sD699JwMZQ==
+"@engr-lynx/cdk-service-patterns@^0.2.0":
+  version "0.2.0"
+  resolved "https://registry.yarnpkg.com/@engr-lynx/cdk-service-patterns/-/cdk-service-patterns-0.2.0.tgz#13115db0f678ae0d68cf8f7649e3b1bd08a76ad0"
+  integrity sha512-djmvP+CqvxScgh4wH7tovBvN8sQR8cNo8w3YCvIcuQ17mJC9FP4Rv4shg3237KHhwzSRZCYtwEkPoTikFTcJTg==
   dependencies:
     "@aws-cdk/aws-apprunner" "^1.121.0"
     "@aws-cdk/aws-cloudfront" "^1.121.0"
