@@ -28,7 +28,6 @@ import {
 } from '@aws-cdk/aws-codebuild'
 import {
   Repository as EcrRepository,
-  AuthorizationToken,
 } from '@aws-cdk/aws-ecr'
 import {
   Bucket,
@@ -317,7 +316,7 @@ export function buildArchiValidateAction (scope: Construct, archiValidateActionP
     'cd assembly-*',
   ]
   const buildCommands = [
-    `for f in *.template.json  do 
+    `for f in *.template.json do 
       cfn-dia h -c -t "\${f}" -o "../out/\${f%.template.json}"  
       echo $( jq ". + [\\"\${f%.template.json}\\"]" ../out/templates.json ) > ../out/templates.json  
     done`,
@@ -392,13 +391,15 @@ export interface ContBuildActionProps extends BasePipelineHelperProps, BuildConf
   installCommands?: string[],
   prebuildCommands?: string[],
   postbuildCommands?: string[],
-  repoUriVarName: string,
+  repoName?: string,
 }
 
 export function buildContBuildAction (scope: Construct, contBuildActionProps: ContBuildActionProps) {
   const prefix = contBuildActionProps.prefix??''
   const contRepoId = prefix + 'ContRepo'
-  const contRepo = new EcrRepository(scope, contRepoId)
+  const contRepo = contBuildActionProps.repoName ?
+    EcrRepository.fromRepositoryName(scope, contRepoId, contBuildActionProps.repoName) :
+    new EcrRepository(scope, contRepoId)
   const envVar = {
     ...contBuildActionProps.inKvArgs,
     ...contBuildActionProps.kvArgs,
@@ -406,7 +407,6 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
     ...contBuildActionProps.envVars,
     PREBUILD_SCRIPT: contBuildActionProps.prebuildScript,
     POSTBUILD_SCRIPT: contBuildActionProps.postbuildScript,
-    [contBuildActionProps.repoUriVarName]: contRepo.repositoryUri,
   }
   const runtimes = {
     ...contBuildActionProps.runtimes,
@@ -418,8 +418,8 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
   prebuildCommands.push(...contBuildActionProps.prebuildCommands??[])
   prebuildCommands.push(
     '[ -f "${PREBUILD_SCRIPT}" ] && . ./${PREBUILD_SCRIPT} || [ ! -f "${PREBUILD_SCRIPT}" ]',
-    'aws ecr get-login-password | docker login --username AWS --password-stdin ${' + contBuildActionProps.repoUriVarName + '}',
-    'docker pull ${' + contBuildActionProps.repoUriVarName + '}:latest || true',
+    'aws ecr get-login-password | docker login --username AWS --password-stdin ' + contRepo.repositoryUri,
+    'docker pull ' + contRepo.repositoryUri + ':latest || true',
   )
   const inKvArgKeys = Object.keys(contBuildActionProps.inKvArgs??{})
   const kvArgKeys = Object.keys(
@@ -430,12 +430,12 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
     'DOCKER_BUILDKIT=1 docker build --build-arg BUILDKIT_INLINE_CACHE=1',
   ].concat(buildArgsParts)
   buildCommandParts.push(
-    '--cache-from ${' + contBuildActionProps.repoUriVarName + '}:latest -t ${' + contBuildActionProps.repoUriVarName + '}:latest .',
+    '--cache-from ' + contRepo.repositoryUri + ':latest -t ' + contRepo.repositoryUri + ':latest .',
   )
   const buildCommand = buildCommandParts.join(' ')
   const postbuildCommands = []
   postbuildCommands.push(
-    'docker push ${' + contBuildActionProps.repoUriVarName + '}',
+    'docker push ' + contRepo.repositoryUri,
     '[ -f "${POSTBUILD_SCRIPT}" ] && . ./${POSTBUILD_SCRIPT} || [ ! -f "${POSTBUILD_SCRIPT}" ]',
   )
   postbuildCommands.push(...contBuildActionProps.postbuildCommands??[])
@@ -471,7 +471,6 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
     environment: linuxPrivilegedEnv,
     buildSpec: contSpec,
   })
-  AuthorizationToken.grantRead(contProject)
   contRepo.grantPullPush(contProject)
   const actionName = prefix + 'ContBuild'
   const action = new CodeBuildAction({
