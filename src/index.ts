@@ -105,13 +105,15 @@ export interface StageConfig {
   specFilename?: string,
 }
 
+// ToDo: Reorganize
 export interface BuildConfig extends StageConfig {
-  privileged?: boolean,
-  prebuildScript?: string,
-  postbuildScript?: string,
-  envVars?: KeyValue,
-  args?: string[],
-  kvArgs?: KeyValue,
+  privileged?: boolean, // used only for buildCustom
+  prebuildScript?: string, // not used for buildCustom or buildYarn
+  postbuildScript?: string, // not used for buildCustom or buildYarn
+  envVars?: KeyValue, // not used for buildCustom or buildYarn
+  envSecrets?: KeyValue, // not used for buildCustom or buildYarn
+  envVarArgs?: KeyValue, // used only for buildCont
+  envSecretArgs?: KeyValue, // used only for buildCont
 }
 
 export interface StagingConfig extends StageConfig {}
@@ -139,15 +141,15 @@ export interface DeployableConfig {
 
 // Builder Functions
 
-interface BasePipelineHelperProps {
+interface BasePipelineBuilderProps {
   prefix?: string,
 }
 
-export interface CodeCommitSourceActionProps extends BasePipelineHelperProps, CodeCommitSourceConfig {}
+export interface CodeCommitSourceActionProps extends BasePipelineBuilderProps, CodeCommitSourceConfig {}
 
-export interface GitHubSourceActionProps extends BasePipelineHelperProps, GitHubSourceConfig {}
+export interface GitHubSourceActionProps extends BasePipelineBuilderProps, GitHubSourceConfig {}
 
-export interface S3SourceActionProps extends BasePipelineHelperProps, S3SourceConfig {
+export interface S3SourceActionProps extends BasePipelineBuilderProps, S3SourceConfig {
   key: string,
 }
 
@@ -208,11 +210,15 @@ export function buildSourceAction (scope: Construct, sourceActionProps: SourceAc
   }
 }
 
-export interface YarnSynthActionProps extends BasePipelineHelperProps, BuildConfig {
+export interface BaseBuildProps extends BasePipelineBuilderProps {
   sourceCode: Artifact,
+}
+
+export interface YarnSynthActionProps extends BaseBuildProps, BuildConfig {
   cacheBucket: IBucket,
 }
 
+// ToDo: Utilize all fields in YarnSynthActionProps. Otherwise, create a BaseBuildConfig -> YarnSynthConfig
 export function buildYarnSynthAction (scope: Construct, yarnSynthActionProps: YarnSynthActionProps) {
   const prefix = yarnSynthActionProps.prefix??''
   const cloudAssemblyId = prefix + 'CloudAssembly'
@@ -286,7 +292,7 @@ export function buildYarnSynthAction (scope: Construct, yarnSynthActionProps: Ya
   }
 }
 
-export interface ArchiValidateActionProps extends BasePipelineHelperProps, ValidateConfig {
+export interface ArchiValidateActionProps extends BasePipelineBuilderProps, ValidateConfig {
   cloudAssembly: Artifact,
   runOrder?: number,
   cacheBucket: IBucket,
@@ -384,29 +390,50 @@ export function buildArchiValidateAction (scope: Construct, archiValidateActionP
   }
 }
 
-export interface ContBuildActionProps extends BasePipelineHelperProps, BuildConfig {
-  sourceCode: Artifact,
+export interface ContBuildActionProps extends BaseBuildProps, BuildConfig {
   inEnvVars?: KeyValue,
-  inKvArgs?: KeyValue,
+  inEnvSecrets?: KeyValue,
+  inEnvVarArgs?: KeyValue,
+  inEnvSecretArgs?: KeyValue,
   installCommands?: string[],
   prebuildCommands?: string[],
   postbuildCommands?: string[],
   repoName?: string,
 }
 
+// ToDo: Add INSTALL_SCRIPT
+// ToDo: Utilize all fields in YarnSynthActionProps. Otherwise, create a BaseBuildConfig -> ContBuildConfig
 export function buildContBuildAction (scope: Construct, contBuildActionProps: ContBuildActionProps) {
   const prefix = contBuildActionProps.prefix??''
   const contRepoId = prefix + 'ContRepo'
   const contRepo = contBuildActionProps.repoName ?
     EcrRepository.fromRepositoryName(scope, contRepoId, contBuildActionProps.repoName) :
     new EcrRepository(scope, contRepoId)
-  const envVar = {
-    ...contBuildActionProps.inKvArgs,
-    ...contBuildActionProps.kvArgs,
+  const envVarArgs ={
+    ...contBuildActionProps.inEnvVarArgs,
+    ...contBuildActionProps.envVarArgs,
+  }
+  const envVars = {
     ...contBuildActionProps.inEnvVars,
     ...contBuildActionProps.envVars,
+  }
+  const envSecretArgs ={
+    ...contBuildActionProps.inEnvSecretArgs,
+    ...contBuildActionProps.envSecretArgs,
+  }
+  const envSecrets = {
+    ...contBuildActionProps.inEnvSecrets,
+    ...contBuildActionProps.envSecrets,
+  }
+  const allEnvVars = {
+    ...envVarArgs,
+    ...envVars,
     PREBUILD_SCRIPT: contBuildActionProps.prebuildScript,
     POSTBUILD_SCRIPT: contBuildActionProps.postbuildScript,
+  }
+  const allEnvSecrets = {
+    ...envSecretArgs,
+    ...envSecrets,
   }
   const runtimes = {
     ...contBuildActionProps.runtimes,
@@ -421,14 +448,14 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
     'aws ecr get-login-password | docker login --username AWS --password-stdin ' + contRepo.repositoryUri,
     'docker pull ' + contRepo.repositoryUri + ':latest || true',
   )
-  const inKvArgKeys = Object.keys(contBuildActionProps.inKvArgs??{})
-  const kvArgKeys = Object.keys(
-    contBuildActionProps.kvArgs??{}
-  ).concat(inKvArgKeys)
-  const buildArgsParts = kvArgKeys.map(kvArgKey => '--build-arg ' + kvArgKey + '=${' + kvArgKey + '}')
+  const envVarArgKeys = Object.keys(envVarArgs??{})
+  const envSecretArgKeys = Object.keys(envSecretArgs??{})
+  let argKeys: string[] = []
+  argKeys = argKeys.concat(envVarArgKeys).concat(envSecretArgKeys)
+  const buildArgs = argKeys.map(argKey => '--build-arg ' + argKey + '=${' + argKey + '}')
   const buildCommandParts = [
     'DOCKER_BUILDKIT=1 docker build --build-arg BUILDKIT_INLINE_CACHE=1',
-  ].concat(buildArgsParts)
+  ].concat(buildArgs)
   buildCommandParts.push(
     '--cache-from ' + contRepo.repositoryUri + ':latest -t ' + contRepo.repositoryUri + ':latest .',
   )
@@ -442,7 +469,8 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
   const contSpec = BuildSpec.fromObjectToYaml({
     version: '0.2',
     env: {
-      variables: envVar,
+      variables: allEnvVars,
+      'secrets-manager': allEnvSecrets,
     },
     phases: {
       install: {
@@ -485,14 +513,14 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
   }
 }
 
-export interface DroidBuildActionProps extends BasePipelineHelperProps, BuildConfig {
-  sourceCode: Artifact,
+export interface DroidBuildActionProps extends BaseBuildProps, BuildConfig {
   envVar?: KeyValue,
   prebuildCommands?: string[]
   postbuildCommands?: string[]
   cacheBucket: IBucket,
 }
 
+// ToDo: Utilize all fields in YarnSynthActionProps. Otherwise, create a BaseBuildConfig -> DroidBuildConfig
 export function buildDroidBuildAction (scope: Construct, droidBuildActionProps: DroidBuildActionProps) {
   const prefix = droidBuildActionProps.prefix??''
   const apkFilesId = prefix + 'ApkFiles'
@@ -581,12 +609,15 @@ export function buildDroidBuildAction (scope: Construct, droidBuildActionProps: 
   }
 }
 
-export interface CustomActionProps extends BasePipelineHelperProps, StageConfig {
+// ToDo: Extend BuildConfig / TestConfig instead of StageConfig
+export interface CustomActionProps extends BasePipelineBuilderProps, StageConfig {
   type?: CodeBuildActionType,
   input: Artifact,
   cacheBucket: IBucket,
 }
 
+// ToDo: Rename from custom to user-defined.
+// ToDo: Split to build and test?
 export function buildCustomAction (scope: Construct, customActionProps: CustomActionProps) {
   const prefix = customActionProps.prefix??''
   const artifactId = prefix + 'Artifact'
@@ -629,7 +660,7 @@ interface Policy {
   resources: string [],
 }
 
-export interface PyInvokeActionProps extends BasePipelineHelperProps {
+export interface PyInvokeActionProps extends BasePipelineBuilderProps {
   policies?: Policy[],
   path: string,
   index?: string,
