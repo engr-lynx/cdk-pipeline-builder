@@ -115,7 +115,7 @@ interface BaseCustomBuildConfig extends BaseComputeStageConfig {
 export interface ImageBuildConfig extends BaseCustomBuildConfig {
   envVarArgs?: KeyValue,
   envSecretArgs?: KeyValue,
-  deleteRepoWithApp: boolean,
+  deleteRepoWithApp?: boolean,
 }
 
 export interface DroidBuildConfig extends BaseCustomBuildConfig {}
