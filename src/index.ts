@@ -90,6 +90,7 @@ export interface GitHubSourceConfig extends BaseSourceConfig {
 
 export interface S3SourceConfig extends BaseSourceConfig {
   type: SourceType.S3,
+  deleteBucketWithApp?: boolean,
 }
 
 export enum ComputeSize {
@@ -235,9 +236,30 @@ export function createSourceAction (scope: Construct, sourceActionProps: SourceA
       break
     case SourceType.S3:
       const s3SourceActionProps = sourceActionProps as S3SourceActionProps
+      const removalPolicy = sourceActionProps.deleteBucketWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
       source = new Bucket(scope, sourceId, {
         versioned: true,
+        removalPolicy,
       })
+      if (sourceActionProps.deleteBucketWithApp) {
+        // ToDo: Put PythonFunction + Provider + CustomResource in a module.
+        const entry = join(__dirname, 'custom-resource', 'empty-bucket')
+        const onEventHandler = new PythonFunction(scope, 'EmptyBucket', {
+          entry,
+        })
+        source.grantRead(onEventHandler)
+        source.grantDelete(onEventHandler)
+        const emptyBucketProvider = new Provider(scope, 'EmptyBucketProvider', {
+          onEventHandler,
+        })
+        const properties = {
+          bucketName: source.bucketName,
+        }
+        new CustomResource(scope, 'EmptyBucketResource', {
+          serviceToken: emptyBucketProvider.serviceToken,
+          properties,
+        })
+      }
       action = new S3SourceAction({
         actionName,
         output: sourceArtifact,
@@ -345,7 +367,7 @@ export interface ArchiValidateActionProps extends BasePipelineBuilderProps, Vali
 export function createArchiValidateAction (scope: Construct, archiValidateActionProps: ArchiValidateActionProps) {
   const prefix = archiValidateActionProps.prefix ?? 'Validate'
   const diagramsSite = new Cdn(scope, 'DiagramsSite')
-  const path = join(__dirname, 'cloud-diagrams/index.html')
+  const path = join(__dirname, 'cloud-diagrams', 'index.html')
   const diagramsIndex = new Asset(scope, 'DiagramsIndex', {
     path,
   })
@@ -454,7 +476,7 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
   })
   if (imageBuildActionProps.deleteRepoWithApp) {
     // ToDo: Put PythonFunction + Provider + CustomResource in a module.
-    const entry = join(__dirname, 'empty-repo')
+    const entry = join(__dirname, 'custom-resource', 'empty-repo')
     const onEventHandler = new PythonFunction(scope, 'EmptyRepo', {
       entry,
     })

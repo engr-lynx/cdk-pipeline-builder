@@ -1,11 +1,11 @@
 {
   "name": "@engr-lynx/cdk-pipeline-builder",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "pipeline builder for CDK typescript",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
   "scripts": {
-    "build": "tsc && cp -R ./src/empty-repo ./build",
+    "build": "tsc && cp -R ./src/custom-resource ./build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "files": [
