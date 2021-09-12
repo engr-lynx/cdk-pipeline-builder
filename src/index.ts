@@ -4,6 +4,7 @@ import {
 import {
   SecretValue,
   Construct,
+  RemovalPolicy,
 } from '@aws-cdk/core'
 import {
   Artifact,
@@ -46,6 +47,9 @@ import {
   Cdn,
 } from '@engr-lynx/cdk-service-patterns'
 
+// ToDo: Unify naming (including prefix usage)
+// ToDo: Coding standards: flatten nested tabs; operator spacing
+
 // Config Definitions
 
 export class PipelineConfigError extends Error {
@@ -84,10 +88,6 @@ export interface S3SourceConfig extends BaseSourceConfig {
   type: SourceType.S3,
 }
 
-export type SourceConfig = CodeCommitSourceConfig | GitHubSourceConfig | S3SourceConfig
-
-/**/
-
 export enum ComputeSize {
   Small = 'Small',
   Medium = 'Medium',
@@ -95,38 +95,64 @@ export enum ComputeSize {
   X2Large = '2xLarge',
 }
 
+interface BaseComputeStageConfig {
+  compute?: ComputeSize,
+}
+
 export interface KeyValue {
   [key: string]: string | number,
 }
 
-export interface StageConfig {
-  compute?: ComputeSize,
+interface BaseCustomBuildConfig extends BaseComputeStageConfig {
   runtimes?: KeyValue,
+  installScript?: string,
+  prebuildScript?: string,
+  postbuildScript?: string,
+  envVars?: KeyValue,
+  envSecrets?: KeyValue,
+}
+
+export interface ImageBuildConfig extends BaseCustomBuildConfig {
+  envVarArgs?: KeyValue,
+  envSecretArgs?: KeyValue,
+  deleteRepoWithApp: boolean,
+}
+
+export interface DroidBuildConfig extends BaseCustomBuildConfig {}
+
+interface BaseSpecDefinedStageConfig extends BaseComputeStageConfig {
   specFilename?: string,
 }
 
-// ToDo: Reorganize
-export interface BuildConfig extends StageConfig {
-  privileged?: boolean, // used only for buildCustom
-  prebuildScript?: string, // not used for buildCustom or buildYarn
-  postbuildScript?: string, // not used for buildCustom or buildYarn
-  envVars?: KeyValue, // not used for buildCustom or buildYarn
-  envSecrets?: KeyValue, // not used for buildCustom or buildYarn
-  envVarArgs?: KeyValue, // used only for buildCont
-  envSecretArgs?: KeyValue, // used only for buildCont
+export interface SpecDefinedBuildConfig extends BaseSpecDefinedStageConfig {
+  privileged?: boolean,
 }
 
-export interface StagingConfig extends StageConfig {}
+export interface SpecDefinedStagingConfig extends BaseSpecDefinedStageConfig {}
 
-export interface TestConfig extends StageConfig {}
+export interface SpecDefinedTestConfig extends BaseSpecDefinedStageConfig {}
 
-export interface ValidateConfig extends StageConfig {
+interface BaseValidateConfig {
   emails?: string[],
 }
 
-export interface DeployConfig extends StageConfig {}
+export interface SpecDefinedValidateConfig extends BaseSpecDefinedStageConfig, BaseValidateConfig {}
 
-export interface PipelineConfig {
+export interface SpecDefinedDeployConfig extends BaseSpecDefinedStageConfig {}
+
+export type SourceConfig = CodeCommitSourceConfig | GitHubSourceConfig | S3SourceConfig
+
+export type BuildConfig = ImageBuildConfig | DroidBuildConfig | SpecDefinedBuildConfig
+
+export type StagingConfig = SpecDefinedStagingConfig
+
+export type TestConfig = SpecDefinedTestConfig
+
+export type ValidateConfig = SpecDefinedValidateConfig
+
+export type DeployConfig = SpecDefinedDeployConfig
+
+export interface AppPipelineConfig {
   source: SourceConfig,
   build?: BuildConfig,
   staging?: StagingConfig,
@@ -135,12 +161,27 @@ export interface PipelineConfig {
   deploy?: DeployConfig,
 }
 
-export interface DeployableConfig {
-  pipeline: PipelineConfig,
+export interface DeployableAppConfig {
+  pipeline: AppPipelineConfig,
+}
+
+export interface YarnSynthConfig extends BaseComputeStageConfig {}
+
+export type SynthConfig = YarnSynthConfig
+
+export interface ArchiPipelineConfig {
+  source: SourceConfig,
+  synth?: SynthConfig,
+  validate?: ValidateConfig,
+}
+
+export interface DeployableArchiConfig {
+  pipeline: ArchiPipelineConfig,
 }
 
 // Builder Functions
 
+// ToDo: Reorganize Props interfaces similar to Config interfaces
 interface BasePipelineBuilderProps {
   prefix?: string,
 }
@@ -155,12 +196,12 @@ export interface S3SourceActionProps extends BasePipelineBuilderProps, S3SourceC
 
 export type SourceActionProps = CodeCommitSourceActionProps | GitHubSourceActionProps | S3SourceActionProps
 
-export function buildSourceAction (scope: Construct, sourceActionProps: SourceActionProps) {
-  const prefix = sourceActionProps.prefix??''
-  const sourceArtifactId = prefix + 'SourceArtifact'
+export function createSourceAction (scope: Construct, sourceActionProps: SourceActionProps) {
+  const prefix = sourceActionProps.prefix ?? 'Source'
+  const sourceArtifactId = prefix + 'Artifact'
   const sourceArtifact = new Artifact(sourceArtifactId)
-  const sourceId = prefix + 'Source'
-  const actionName = prefix + 'Source'
+  const sourceId = prefix
+  const actionName = prefix
   let source
   let action
   switch(sourceActionProps.type) {
@@ -214,13 +255,12 @@ export interface BaseBuildProps extends BasePipelineBuilderProps {
   sourceCode: Artifact,
 }
 
-export interface YarnSynthActionProps extends BaseBuildProps, BuildConfig {
+export interface YarnSynthActionProps extends BaseBuildProps, YarnSynthConfig {
   cacheBucket: IBucket,
 }
 
-// ToDo: Utilize all fields in YarnSynthActionProps. Otherwise, create a BaseBuildConfig -> YarnSynthConfig
-export function buildYarnSynthAction (scope: Construct, yarnSynthActionProps: YarnSynthActionProps) {
-  const prefix = yarnSynthActionProps.prefix??''
+export function createYarnSynthAction (scope: Construct, yarnSynthActionProps: YarnSynthActionProps) {
+  const prefix = yarnSynthActionProps.prefix ?? 'Synth'
   const cloudAssemblyId = prefix + 'CloudAssembly'
   const cloudAssembly = new Artifact(cloudAssemblyId)
   const runtimes = {
@@ -268,7 +308,7 @@ export function buildYarnSynthAction (scope: Construct, yarnSynthActionProps: Ya
     computeType,
     privileged: true,
   }
-  const projectId = prefix + 'SynthProject'
+  const projectId = prefix + 'Project'
   const cache = Cache.bucket(yarnSynthActionProps.cacheBucket, {
     prefix: projectId,
   })
@@ -277,7 +317,7 @@ export function buildYarnSynthAction (scope: Construct, yarnSynthActionProps: Ya
     environment,
     cache,
   })
-  const actionName = prefix + 'Synth'
+  const actionName = prefix
   const action = new CodeBuildAction({
     actionName,
     project: synthProject,
@@ -298,8 +338,8 @@ export interface ArchiValidateActionProps extends BasePipelineBuilderProps, Vali
   cacheBucket: IBucket,
 }
 
-export function buildArchiValidateAction (scope: Construct, archiValidateActionProps: ArchiValidateActionProps) {
-  const prefix = archiValidateActionProps.prefix??''
+export function createArchiValidateAction (scope: Construct, archiValidateActionProps: ArchiValidateActionProps) {
+  const prefix = archiValidateActionProps.prefix ?? 'Validate'
   const diagramsSite = new Cdn(scope, 'DiagramsSite')
   const path = join(__dirname, 'cloud-diagrams/index.html')
   const diagramsIndex = new Asset(scope, 'DiagramsIndex', {
@@ -364,7 +404,7 @@ export function buildArchiValidateAction (scope: Construct, archiValidateActionP
     computeType,
     buildImage: LinuxBuildImage.AMAZON_LINUX_2_3,
   }
-  const projectId = prefix + 'DiagramProject'
+  const projectId = prefix + 'Project'
   const cache = Cache.bucket(archiValidateActionProps.cacheBucket, {
     prefix: projectId,
   })
@@ -376,7 +416,7 @@ export function buildArchiValidateAction (scope: Construct, archiValidateActionP
   diagramsSite.source.grantReadWrite(diagramsProject)
   diagramsIndex.grantRead(diagramsProject)
   diagramsSite.distribution.grantInvalidate(diagramsProject)
-  const actionName = prefix + 'Diagram'
+  const actionName = prefix
   const action = new CodeBuildAction({
     actionName,
     project: diagramsProject,
@@ -390,7 +430,8 @@ export function buildArchiValidateAction (scope: Construct, archiValidateActionP
   }
 }
 
-export interface ContBuildActionProps extends BaseBuildProps, BuildConfig {
+export interface ImageBuildActionProps extends BaseBuildProps, ImageBuildConfig {
+  inRuntimes?: KeyValue,
   inEnvVars?: KeyValue,
   inEnvSecrets?: KeyValue,
   inEnvVarArgs?: KeyValue,
@@ -398,58 +439,64 @@ export interface ContBuildActionProps extends BaseBuildProps, BuildConfig {
   installCommands?: string[],
   prebuildCommands?: string[],
   postbuildCommands?: string[],
-  repoName?: string,
 }
 
 // ToDo: Add INSTALL_SCRIPT
-// ToDo: Utilize all fields in YarnSynthActionProps. Otherwise, create a BaseBuildConfig -> ContBuildConfig
-export function buildContBuildAction (scope: Construct, contBuildActionProps: ContBuildActionProps) {
-  const prefix = contBuildActionProps.prefix??''
-  const contRepoId = prefix + 'ContRepo'
-  const contRepo = contBuildActionProps.repoName ?
-    EcrRepository.fromRepositoryName(scope, contRepoId, contBuildActionProps.repoName) :
-    new EcrRepository(scope, contRepoId)
+export function createImageBuildAction (scope: Construct, imageBuildActionProps: ImageBuildActionProps) {
+  const prefix = imageBuildActionProps.prefix ?? 'Build'
+  const imageRepoId = prefix + 'Repo'
+  const removalPolicy = imageBuildActionProps.deleteRepoWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
+  const imageRepo = new EcrRepository(scope, imageRepoId, {
+    removalPolicy,
+  })
+  const runtimes ={
+    ...imageBuildActionProps.inRuntimes,
+    ...imageBuildActionProps.runtimes,
+  }
+  const allRuntimes = {
+    ...runtimes,
+    docker: 19,
+  }
   const envVarArgs ={
-    ...contBuildActionProps.inEnvVarArgs,
-    ...contBuildActionProps.envVarArgs,
+    ...imageBuildActionProps.inEnvVarArgs,
+    ...imageBuildActionProps.envVarArgs,
   }
   const envVars = {
-    ...contBuildActionProps.inEnvVars,
-    ...contBuildActionProps.envVars,
+    ...imageBuildActionProps.inEnvVars,
+    ...imageBuildActionProps.envVars,
   }
   const envSecretArgs ={
-    ...contBuildActionProps.inEnvSecretArgs,
-    ...contBuildActionProps.envSecretArgs,
+    ...imageBuildActionProps.inEnvSecretArgs,
+    ...imageBuildActionProps.envSecretArgs,
   }
   const envSecrets = {
-    ...contBuildActionProps.inEnvSecrets,
-    ...contBuildActionProps.envSecrets,
+    ...imageBuildActionProps.inEnvSecrets,
+    ...imageBuildActionProps.envSecrets,
   }
   const allEnvVars = {
     ...envVarArgs,
     ...envVars,
-    PREBUILD_SCRIPT: contBuildActionProps.prebuildScript,
-    POSTBUILD_SCRIPT: contBuildActionProps.postbuildScript,
   }
   const allEnvSecrets = {
     ...envSecretArgs,
     ...envSecrets,
   }
-  const runtimes = {
-    ...contBuildActionProps.runtimes,
-    docker: 19,
-  }
   const installCommands = []
-  installCommands.push(...contBuildActionProps.installCommands??[])
-  const prebuildCommands = []
-  prebuildCommands.push(...contBuildActionProps.prebuildCommands??[])
-  prebuildCommands.push(
-    '[ -f "${PREBUILD_SCRIPT}" ] && . ./${PREBUILD_SCRIPT} || [ ! -f "${PREBUILD_SCRIPT}" ]',
-    'aws ecr get-login-password | docker login --username AWS --password-stdin ' + contRepo.repositoryUri,
-    'docker pull ' + contRepo.repositoryUri + ':latest || true',
+  installCommands.push(...imageBuildActionProps.installCommands ?? [])
+  const installScript = imageBuildActionProps.installScript
+  installCommands.push(
+    '[ -f "' + installScript + '" ] && . ./' + installScript + ' || [ ! -f "' + installScript + '" ]',
   )
-  const envVarArgKeys = Object.keys(envVarArgs??{})
-  const envSecretArgKeys = Object.keys(envSecretArgs??{})
+  const prebuildCommands = []
+  prebuildCommands.push(...imageBuildActionProps.prebuildCommands ?? [])
+  const prebuildScript = imageBuildActionProps.prebuildScript
+  prebuildCommands.push(
+    '[ -f "' + prebuildScript + '" ] && . ./' + prebuildScript + ' || [ ! -f "' + prebuildScript + '" ]',
+    'aws ecr get-login-password | docker login --username AWS --password-stdin ' + imageRepo.repositoryUri,
+    'docker pull ' + imageRepo.repositoryUri + ':latest || true',
+  )
+  const envVarArgKeys = Object.keys(envVarArgs ?? {})
+  const envSecretArgKeys = Object.keys(envSecretArgs ?? {})
   let argKeys: string[] = []
   argKeys = argKeys.concat(envVarArgKeys).concat(envSecretArgKeys)
   const buildArgs = argKeys.map(argKey => '--build-arg ' + argKey + '=${' + argKey + '}')
@@ -457,16 +504,17 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
     'DOCKER_BUILDKIT=1 docker build --build-arg BUILDKIT_INLINE_CACHE=1',
   ].concat(buildArgs)
   buildCommandParts.push(
-    '--cache-from ' + contRepo.repositoryUri + ':latest -t ' + contRepo.repositoryUri + ':latest .',
+    '--cache-from ' + imageRepo.repositoryUri + ':latest -t ' + imageRepo.repositoryUri + ':latest .',
   )
   const buildCommand = buildCommandParts.join(' ')
   const postbuildCommands = []
+  const postbuildScript = imageBuildActionProps.postbuildScript
   postbuildCommands.push(
-    'docker push ' + contRepo.repositoryUri,
-    '[ -f "${POSTBUILD_SCRIPT}" ] && . ./${POSTBUILD_SCRIPT} || [ ! -f "${POSTBUILD_SCRIPT}" ]',
+    'docker push ' + imageRepo.repositoryUri,
+    '[ -f "' + postbuildScript + '" ] && . ./' + postbuildScript + ' || [ ! -f "' + postbuildScript + '" ]',
   )
-  postbuildCommands.push(...contBuildActionProps.postbuildCommands??[])
-  const contSpec = BuildSpec.fromObjectToYaml({
+  postbuildCommands.push(...imageBuildActionProps.postbuildCommands ?? [])
+  const imageSpec = BuildSpec.fromObjectToYaml({
     version: '0.2',
     env: {
       variables: allEnvVars,
@@ -474,7 +522,7 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
     },
     phases: {
       install: {
-        'runtime-versions': runtimes,
+        'runtime-versions': allRuntimes,
         commands: installCommands,
       },
       pre_build: {
@@ -488,71 +536,90 @@ export function buildContBuildAction (scope: Construct, contBuildActionProps: Co
       },
     },
   })
-  const computeType = mapCompute(contBuildActionProps.compute)
+  const computeType = mapCompute(imageBuildActionProps.compute)
   const linuxPrivilegedEnv = {
     computeType,
     buildImage: LinuxBuildImage.AMAZON_LINUX_2_3,
     privileged: true,
   }
-  const projectName = prefix + 'ContProject'
-  const contProject = new PipelineProject(scope, projectName, {
+  const projectName = prefix + 'Project'
+  const imageProject = new PipelineProject(scope, projectName, {
     environment: linuxPrivilegedEnv,
-    buildSpec: contSpec,
+    buildSpec: imageSpec,
   })
-  contRepo.grantPullPush(contProject)
-  const actionName = prefix + 'ContBuild'
+  imageRepo.grantPullPush(imageProject)
+  const actionName = prefix
   const action = new CodeBuildAction({
     actionName,
-    project: contProject,
-    input: contBuildActionProps.sourceCode,
+    project: imageProject,
+    input: imageBuildActionProps.sourceCode,
   })
   return {
     action,
-    grantee: contProject,
-    contRepo,
+    grantee: imageProject,
+    imageRepo,
   }
 }
 
-export interface DroidBuildActionProps extends BaseBuildProps, BuildConfig {
-  envVar?: KeyValue,
+export interface DroidBuildActionProps extends BaseBuildProps, DroidBuildConfig {
+  inRuntimes?: KeyValue,
+  inEnvVars?: KeyValue,
+  inEnvSecrets?: KeyValue,
+  installCommands?: string[],
   prebuildCommands?: string[]
   postbuildCommands?: string[]
   cacheBucket: IBucket,
 }
 
-// ToDo: Utilize all fields in YarnSynthActionProps. Otherwise, create a BaseBuildConfig -> DroidBuildConfig
-export function buildDroidBuildAction (scope: Construct, droidBuildActionProps: DroidBuildActionProps) {
-  const prefix = droidBuildActionProps.prefix??''
+export function createDroidBuildAction (scope: Construct, droidBuildActionProps: DroidBuildActionProps) {
+  const prefix = droidBuildActionProps.prefix ?? 'Build'
   const apkFilesId = prefix + 'ApkFiles'
   const apkFiles = new Artifact(apkFilesId)
-  const envVar = {
-    ...droidBuildActionProps.envVar,
-    PREBUILD_SCRIPT: droidBuildActionProps.prebuildScript,
-    POSTBUILD_SCRIPT: droidBuildActionProps.postbuildScript,
-  }
-  const runtimes = {
+  const runtimes ={
+    ...droidBuildActionProps.inRuntimes,
     ...droidBuildActionProps.runtimes,
+  }
+  const allRuntimes = {
+    ...runtimes,
     android: 29,
     java: 'corretto8',
   }
+  const envVars = {
+    ...droidBuildActionProps.inEnvVars,
+    ...droidBuildActionProps.envVars,
+  }
+  const envSecrets = {
+    ...droidBuildActionProps.inEnvSecrets,
+    ...droidBuildActionProps.envSecrets,
+  }
+  const installCommands = []
+  installCommands.push(...droidBuildActionProps.installCommands ?? [])
+  const installScript = droidBuildActionProps.installScript
+  installCommands.push(
+    '[ -f "' + installScript + '" ] && . ./' + installScript + ' || [ ! -f "' + installScript + '" ]',
+  )
   const prebuildCommands = []
-  prebuildCommands.push(...droidBuildActionProps.prebuildCommands??[])
+  prebuildCommands.push(...droidBuildActionProps.prebuildCommands ?? [])
+  const prebuildScript = droidBuildActionProps.prebuildScript
   prebuildCommands.push(
-    '[ -f "${PREBUILD_SCRIPT}" ] && . ./${PREBUILD_SCRIPT} || [ ! -f "${PREBUILD_SCRIPT}" ]',
+    '[ -f "' + prebuildScript + '" ] && . ./' + prebuildScript + ' || [ ! -f "' + prebuildScript + '" ]',
   )
   const postbuildCommands = []
+  const postbuildScript = droidBuildActionProps.postbuildScript
   postbuildCommands.push(
-    '[ -f "${POSTBUILD_SCRIPT}" ] && . ./${POSTBUILD_SCRIPT} || [ ! -f "${POSTBUILD_SCRIPT}" ]',
+    '[ -f "' + postbuildScript + '" ] && . ./' + postbuildScript + ' || [ ! -f "' + postbuildScript + '" ]',
   )
-  postbuildCommands.push(...droidBuildActionProps.postbuildCommands??[])
+  postbuildCommands.push(...droidBuildActionProps.postbuildCommands ?? [])
   const droidSpec = BuildSpec.fromObjectToYaml({
     version: '0.2',
     env: {
-      variables: envVar,
+      variables: envVars,
+      'secrets-manager': envSecrets,
     },
     phases: {
       install: {
-        'runtime-versions': runtimes,        
+        'runtime-versions': allRuntimes,        
+        commands: installCommands,
       },
       pre_build: {
         commands: prebuildCommands,
@@ -584,7 +651,7 @@ export function buildDroidBuildAction (scope: Construct, droidBuildActionProps: 
     computeType,
     buildImage: LinuxBuildImage.AMAZON_LINUX_2_3,
   }
-  const projectId = prefix + 'DroidProject'
+  const projectId = prefix + 'Project'
   const cache = Cache.bucket(droidBuildActionProps.cacheBucket, {
     prefix: projectId,
   })
@@ -593,7 +660,7 @@ export function buildDroidBuildAction (scope: Construct, droidBuildActionProps: 
     environment,
     cache,
   })
-  const actionName = prefix + 'DroidBuild'
+  const actionName = prefix
   const action = new CodeBuildAction({
     actionName,
     project: droidProject,
@@ -609,29 +676,25 @@ export function buildDroidBuildAction (scope: Construct, droidBuildActionProps: 
   }
 }
 
-// ToDo: Extend BuildConfig / TestConfig instead of StageConfig
-export interface CustomActionProps extends BasePipelineBuilderProps, StageConfig {
-  type?: CodeBuildActionType,
-  input: Artifact,
+export interface SpecDefinedActionProps {
   cacheBucket: IBucket,
 }
 
-// ToDo: Rename from custom to user-defined.
-// ToDo: Split to build and test?
-export function buildCustomAction (scope: Construct, customActionProps: CustomActionProps) {
-  const prefix = customActionProps.prefix??''
+export interface SpecDefinedBuildActionProps extends BaseBuildProps, SpecDefinedActionProps, SpecDefinedBuildConfig {}
+
+export function createSpecDefinedBuildAction (scope: Construct, specDefinedBuildActionProps: SpecDefinedBuildActionProps) {
+  const prefix = specDefinedBuildActionProps.prefix ?? 'Build'
   const artifactId = prefix + 'Artifact'
   const artifact = new Artifact(artifactId)
-  const buildSpec = customActionProps.specFilename ?
-    BuildSpec.fromSourceFilename(customActionProps.specFilename) :
-    undefined
-  const computeType = mapCompute(customActionProps.compute)
+  const specFilename = specDefinedBuildActionProps.specFilename ?? 'buildspec.yaml'
+  const buildSpec = BuildSpec.fromSourceFilename(specFilename)
+  const computeType = mapCompute(specDefinedBuildActionProps.compute)
   const environment = {
     computeType,
     buildImage: LinuxBuildImage.AMAZON_LINUX_2_3,
   }
   const projectId = prefix + 'Project'
-  const cache = Cache.bucket(customActionProps.cacheBucket, {
+  const cache = Cache.bucket(specDefinedBuildActionProps.cacheBucket, {
     prefix: projectId,
   })
   const customProject = new PipelineProject(scope, projectId, {
@@ -639,12 +702,52 @@ export function buildCustomAction (scope: Construct, customActionProps: CustomAc
     environment,
     cache,
   })
-  const actionName = prefix + 'Action'
+  const actionName = prefix
   const action = new CodeBuildAction({
     actionName,
     project: customProject,
-    type: customActionProps.type,
-    input: customActionProps.input,
+    input: specDefinedBuildActionProps.sourceCode,
+    outputs: [
+      artifact,
+    ],
+  })
+  return {
+    action,
+    artifact,
+  }
+}
+
+export interface SpecDefinedTestActionProps extends BasePipelineBuilderProps, SpecDefinedActionProps, TestConfig {
+  input: Artifact,
+}
+
+// ToDo: Rename from custom to user-defined.
+export function createSpecDefinedTestAction (scope: Construct, specDefinedTestActionProps: SpecDefinedTestActionProps) {
+  const prefix = specDefinedTestActionProps.prefix ?? 'Test'
+  const artifactId = prefix + 'Artifact'
+  const artifact = new Artifact(artifactId)
+  const specFilename = specDefinedTestActionProps.specFilename ?? 'testspec.yaml'
+  const buildSpec = BuildSpec.fromSourceFilename(specFilename)
+  const computeType = mapCompute(specDefinedTestActionProps.compute)
+  const environment = {
+    computeType,
+    buildImage: LinuxBuildImage.AMAZON_LINUX_2_3,
+  }
+  const projectId = prefix + 'Project'
+  const cache = Cache.bucket(specDefinedTestActionProps.cacheBucket, {
+    prefix: projectId,
+  })
+  const customProject = new PipelineProject(scope, projectId, {
+    buildSpec,
+    environment,
+    cache,
+  })
+  const actionName = prefix
+  const action = new CodeBuildAction({
+    actionName,
+    project: customProject,
+    type: CodeBuildActionType.TEST,
+    input: specDefinedTestActionProps.input,
     outputs: [
       artifact,
     ],
@@ -669,8 +772,8 @@ export interface PyInvokeActionProps extends BasePipelineBuilderProps {
   runOrder?: number,
 }
 
-export function buildPyInvokeAction (scope: Construct, pyInvokeActionProps: PyInvokeActionProps) {
-  const prefix = pyInvokeActionProps.prefix??''
+export function createPyInvokeAction (scope: Construct, pyInvokeActionProps: PyInvokeActionProps) {
+  const prefix = pyInvokeActionProps.prefix ?? 'Invoke'
   const initialPolicy = pyInvokeActionProps.policies?.map(policy => new PolicyStatement(policy))
   const entry = join(__dirname, pyInvokeActionProps.path)
   const handlerName = prefix + 'Handler'
@@ -680,7 +783,7 @@ export function buildPyInvokeAction (scope: Construct, pyInvokeActionProps: PyIn
     handler: pyInvokeActionProps.handler,
     initialPolicy,
   })
-  const actionName = prefix + 'Action'
+  const actionName = prefix
   const action = new LambdaInvokeAction({
     actionName,
     lambda,
