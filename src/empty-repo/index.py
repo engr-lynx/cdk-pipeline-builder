@@ -30,15 +30,16 @@ def delete_all_images(repo_name):
   images = ecr.list_images(
     repositoryName=repo_name
   )
-  while images.nextToken is not None:
-    all_image_ids.extend(images.imageIds)
+  while 'nextToken' in images:
+    all_image_ids.extend(images['imageIds'])
     images = ecr.list_images(
       repositoryName=repo_name,
-      nextToken=images.nextToken
+      nextToken=images['nextToken']
     )
-  all_image_ids.extend(images.imageIds)
-  ecr.batch_delete_image(
-    repositoryName=repo_name,
-    imageIds=all_image_ids
-  )
+  all_image_ids.extend(images['imageIds'])
+  if all_image_ids: 
+    ecr.batch_delete_image(
+      repositoryName=repo_name,
+      imageIds=all_image_ids
+    )
   return
