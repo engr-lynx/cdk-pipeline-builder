@@ -441,7 +441,6 @@ export interface ImageBuildActionProps extends BaseBuildProps, ImageBuildConfig 
   postbuildCommands?: string[],
 }
 
-// ToDo: Add INSTALL_SCRIPT
 export function createImageBuildAction (scope: Construct, imageBuildActionProps: ImageBuildActionProps) {
   const prefix = imageBuildActionProps.prefix ?? 'Build'
   const imageRepoId = prefix + 'Repo'
@@ -483,15 +482,15 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
   }
   const installCommands = []
   installCommands.push(...imageBuildActionProps.installCommands ?? [])
-  const installScript = imageBuildActionProps.installScript
-  installCommands.push(
-    '[ -f "' + installScript + '" ] && . ./' + installScript + ' || [ ! -f "' + installScript + '" ]',
-  )
+  if (imageBuildActionProps.installScript) {
+    installCommands.push('. ./' + imageBuildActionProps.installScript)
+  }
   const prebuildCommands = []
   prebuildCommands.push(...imageBuildActionProps.prebuildCommands ?? [])
-  const prebuildScript = imageBuildActionProps.prebuildScript
+  if (imageBuildActionProps.prebuildScript) {
+    prebuildCommands.push('. ./' + imageBuildActionProps.prebuildScript)
+  }
   prebuildCommands.push(
-    '[ -f "' + prebuildScript + '" ] && . ./' + prebuildScript + ' || [ ! -f "' + prebuildScript + '" ]',
     'aws ecr get-login-password | docker login --username AWS --password-stdin ' + imageRepo.repositoryUri,
     'docker pull ' + imageRepo.repositoryUri + ':latest || true',
   )
@@ -508,11 +507,12 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
   )
   const buildCommand = buildCommandParts.join(' ')
   const postbuildCommands = []
-  const postbuildScript = imageBuildActionProps.postbuildScript
   postbuildCommands.push(
     'docker push ' + imageRepo.repositoryUri,
-    '[ -f "' + postbuildScript + '" ] && . ./' + postbuildScript + ' || [ ! -f "' + postbuildScript + '" ]',
   )
+  if (imageBuildActionProps.postbuildScript) {
+    postbuildCommands.push('. ./' + imageBuildActionProps.postbuildScript)
+  }
   postbuildCommands.push(...imageBuildActionProps.postbuildCommands ?? [])
   const imageSpec = BuildSpec.fromObjectToYaml({
     version: '0.2',
@@ -594,21 +594,19 @@ export function createDroidBuildAction (scope: Construct, droidBuildActionProps:
   }
   const installCommands = []
   installCommands.push(...droidBuildActionProps.installCommands ?? [])
-  const installScript = droidBuildActionProps.installScript
-  installCommands.push(
-    '[ -f "' + installScript + '" ] && . ./' + installScript + ' || [ ! -f "' + installScript + '" ]',
-  )
+  if (droidBuildActionProps.installScript) {
+    installCommands.push('. ./' + droidBuildActionProps.installScript)
+  }
   const prebuildCommands = []
   prebuildCommands.push(...droidBuildActionProps.prebuildCommands ?? [])
-  const prebuildScript = droidBuildActionProps.prebuildScript
-  prebuildCommands.push(
-    '[ -f "' + prebuildScript + '" ] && . ./' + prebuildScript + ' || [ ! -f "' + prebuildScript + '" ]',
-  )
+
+  if (droidBuildActionProps.prebuildScript) {
+    prebuildCommands.push('. ./' + droidBuildActionProps.prebuildScript)
+  }
   const postbuildCommands = []
-  const postbuildScript = droidBuildActionProps.postbuildScript
-  postbuildCommands.push(
-    '[ -f "' + postbuildScript + '" ] && . ./' + postbuildScript + ' || [ ! -f "' + postbuildScript + '" ]',
-  )
+  if (droidBuildActionProps.postbuildScript) {
+    postbuildCommands.push('. ./' + droidBuildActionProps.postbuildScript)
+  }
   postbuildCommands.push(...droidBuildActionProps.postbuildCommands ?? [])
   const droidSpec = BuildSpec.fromObjectToYaml({
     version: '0.2',
