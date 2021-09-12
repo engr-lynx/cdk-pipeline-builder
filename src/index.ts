@@ -5,6 +5,7 @@ import {
   SecretValue,
   Construct,
   RemovalPolicy,
+  CustomResource,
 } from '@aws-cdk/core'
 import {
   Artifact,
@@ -43,6 +44,9 @@ import {
 import {
   PolicyStatement,
 } from '@aws-cdk/aws-iam'
+import {
+  Provider,
+} from '@aws-cdk/custom-resources'
 import {
   Cdn,
 } from '@engr-lynx/cdk-service-patterns'
@@ -448,6 +452,25 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
   const imageRepo = new EcrRepository(scope, imageRepoId, {
     removalPolicy,
   })
+  if (imageBuildActionProps.deleteRepoWithApp) {
+    // ToDo: Put PythonFunction + Provider + CustomResource in a module.
+    const entry = join(__dirname, 'empty-repo')
+    const onEventHandler = new PythonFunction(scope, 'EmptyRepo', {
+      entry,
+    })
+    // ToDo: Aggregate grant to empty
+    imageRepo.grant(onEventHandler, 'ecr:ListImages', 'ecr:BatchDeleteImage')
+    const emptyRepoProvider = new Provider(scope, 'EmptyRepoProvider', {
+      onEventHandler,
+    })
+    const properties = {
+      imageRepoName: imageRepo.repositoryName,
+    }
+    new CustomResource(scope, 'EmptyRepoResource', {
+      serviceToken: emptyRepoProvider.serviceToken,
+      properties,
+    })
+  }
   const runtimes ={
     ...imageBuildActionProps.inRuntimes,
     ...imageBuildActionProps.runtimes,
