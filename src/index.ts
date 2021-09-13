@@ -162,7 +162,7 @@ export type DeployConfig = SpecDefinedDeployConfig
 interface BasePipelineConfig {
   deleteArtifactsWithApp?: boolean,
   restartExecutionOnUpdate?: boolean,
-  source: SourceConfig,
+  source?: SourceConfig,
 }
 
 export interface AppPipelineConfig extends BasePipelineConfig {
@@ -890,7 +890,7 @@ export function createPipeline (scope: Construct, pipelineProps: PipelineProps) 
     })
   }
   const name = prefix
-  new Pipeline(scope, name, {
+  return new Pipeline(scope, name, {
     stages: pipelineProps.stages,
     artifactBucket,
     restartExecutionOnUpdate: pipelineProps.restartExecutionOnUpdate,
