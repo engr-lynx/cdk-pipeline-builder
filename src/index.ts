@@ -9,6 +9,8 @@ import {
 } from '@aws-cdk/core'
 import {
   Artifact,
+  Pipeline,
+  Action,
 } from '@aws-cdk/aws-codepipeline'
 import {
   GitHubSourceAction,
@@ -90,7 +92,7 @@ export interface GitHubSourceConfig extends BaseSourceConfig {
 
 export interface S3SourceConfig extends BaseSourceConfig {
   type: SourceType.S3,
-  deleteBucketWithApp?: boolean,
+  deleteSourceWithApp?: boolean,
 }
 
 export enum ComputeSize {
@@ -157,8 +159,13 @@ export type ValidateConfig = SpecDefinedValidateConfig
 
 export type DeployConfig = SpecDefinedDeployConfig
 
-export interface AppPipelineConfig {
+interface BasePipelineConfig {
+  deleteArtifactsWithApp?: boolean,
+  restartExecutionOnUpdate?: boolean,
   source: SourceConfig,
+}
+
+export interface AppPipelineConfig extends BasePipelineConfig {
   build?: BuildConfig,
   staging?: StagingConfig,
   test?: TestConfig,
@@ -174,8 +181,7 @@ export interface YarnSynthConfig extends BaseComputeStageConfig {}
 
 export type SynthConfig = YarnSynthConfig
 
-export interface ArchiPipelineConfig {
-  source: SourceConfig,
+export interface ArchiPipelineConfig extends BasePipelineConfig {
   synth?: SynthConfig,
   validate?: ValidateConfig,
 }
@@ -236,27 +242,30 @@ export function createSourceAction (scope: Construct, sourceActionProps: SourceA
       break
     case SourceType.S3:
       const s3SourceActionProps = sourceActionProps as S3SourceActionProps
-      const removalPolicy = sourceActionProps.deleteBucketWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
+      const removalPolicy = sourceActionProps.deleteSourceWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
       source = new Bucket(scope, sourceId, {
         versioned: true,
         removalPolicy,
       })
-      if (sourceActionProps.deleteBucketWithApp) {
+      if (sourceActionProps.deleteSourceWithApp) {
         // ToDo: Put PythonFunction + Provider + CustomResource in a module.
         const entry = join(__dirname, 'custom-resource', 'empty-bucket')
-        const onEventHandler = new PythonFunction(scope, 'EmptyBucket', {
+        const handlerId = prefix + 'EmptySourceHandler'
+        const onEventHandler = new PythonFunction(scope, handlerId, {
           entry,
         })
         source.grantRead(onEventHandler)
         source.grantDelete(onEventHandler)
-        const emptyBucketProvider = new Provider(scope, 'EmptyBucketProvider', {
+        const providerId = prefix + 'EmptySourceProvider'
+        const provider = new Provider(scope, providerId, {
           onEventHandler,
         })
         const properties = {
           bucketName: source.bucketName,
         }
-        new CustomResource(scope, 'EmptyBucketResource', {
-          serviceToken: emptyBucketProvider.serviceToken,
+        const resourceId = prefix + 'EmptySourceResource'
+        new CustomResource(scope, resourceId, {
+          serviceToken: provider.serviceToken,
           properties,
         })
       }
@@ -477,19 +486,22 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
   if (imageBuildActionProps.deleteRepoWithApp) {
     // ToDo: Put PythonFunction + Provider + CustomResource in a module.
     const entry = join(__dirname, 'custom-resource', 'empty-repo')
-    const onEventHandler = new PythonFunction(scope, 'EmptyRepo', {
+    const handlerId = prefix + 'EmptyRepoHandler'
+    const onEventHandler = new PythonFunction(scope, handlerId, {
       entry,
     })
     // ToDo: Aggregate grant to empty
     imageRepo.grant(onEventHandler, 'ecr:ListImages', 'ecr:BatchDeleteImage')
-    const emptyRepoProvider = new Provider(scope, 'EmptyRepoProvider', {
+    const providerId = prefix + 'EmptyRepoProvider'
+    const provider = new Provider(scope, providerId, {
       onEventHandler,
     })
     const properties = {
       imageRepoName: imageRepo.repositoryName,
     }
-    new CustomResource(scope, 'EmptyRepoResource', {
-      serviceToken: emptyRepoProvider.serviceToken,
+    const resourceId = prefix + 'EmptyRepoResource'
+    new CustomResource(scope, resourceId, {
+      serviceToken: provider.serviceToken,
       properties,
     })
   }
@@ -837,6 +849,52 @@ export function createPyInvokeAction (scope: Construct, pyInvokeActionProps: PyI
     action,
     grantee: lambda,
   }
+}
+
+export interface StageProps {
+  stageName: string,
+  actions: Action[],
+}
+
+export interface PipelineProps extends BasePipelineBuilderProps, BasePipelineConfig {
+  stages: StageProps[],
+}
+
+export function createPipeline (scope: Construct, pipelineProps: PipelineProps) {
+  const prefix = pipelineProps.prefix ?? 'Pipeline'
+  const artifactBucketId = prefix + 'ArtifactBucket'
+  const removalPolicy = pipelineProps.deleteArtifactsWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
+  const artifactBucket = new Bucket(scope, artifactBucketId, {
+    removalPolicy,
+  })
+  if (pipelineProps.deleteArtifactsWithApp) {
+    // ToDo: Put PythonFunction + Provider + CustomResource in a module.
+    const entry = join(__dirname, 'custom-resource', 'empty-bucket')
+    const handlerId = prefix + 'EmptyArtifactsHandler'
+    const onEventHandler = new PythonFunction(scope, handlerId, {
+      entry,
+    })
+    artifactBucket.grantRead(onEventHandler)
+    artifactBucket.grantDelete(onEventHandler)
+    const providerId = prefix + 'EmptyArtifactsProvider'
+    const provider = new Provider(scope, providerId, {
+      onEventHandler,
+    })
+    const properties = {
+      bucketName: artifactBucket.bucketName,
+    }
+    const resourceId = prefix + 'EmptyArtifactsResource'
+    new CustomResource(scope, resourceId, {
+      serviceToken: provider.serviceToken,
+      properties,
+    })
+  }
+  const name = prefix
+  new Pipeline(scope, name, {
+    stages: pipelineProps.stages,
+    artifactBucket,
+    restartExecutionOnUpdate: pipelineProps.restartExecutionOnUpdate,
+  })
 }
 
 export function mapCompute (compute?: ComputeSize) {
