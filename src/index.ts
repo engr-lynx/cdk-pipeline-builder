@@ -256,8 +256,8 @@ export class SourceAction extends Construct {
             entry,
             properties,
           })
-          bucket.grantRead(emptySourceResource.handler)
-          bucket.grantDelete(emptySourceResource.handler)
+          bucket.grantRead(emptySourceResource)
+          bucket.grantDelete(emptySourceResource)
         }
         this.action = new S3SourceAction({
           actionName,
@@ -487,7 +487,7 @@ export class ImageBuildAction extends Construct {
         properties,
       })
       // ToDo: Aggregate grant to delete.
-      repo.grant(emptyRepoResource.handler, 'ecr:ListImages', 'ecr:BatchDeleteImage')
+      repo.grant(emptyRepoResource, 'ecr:ListImages', 'ecr:BatchDeleteImage')
     }
     const runtimes ={
       ...props.inRuntimes,
@@ -851,8 +851,8 @@ export function createPipeline (scope: Construct, pipelineProps: PipelineProps) 
       entry,
       properties,
     })
-    artifactBucket.grantRead(emptyArtifactsResource.handler)
-    artifactBucket.grantDelete(emptyArtifactsResource.handler)
+    artifactBucket.grantRead(emptyArtifactsResource)
+    artifactBucket.grantDelete(emptyArtifactsResource)
   }
   const name = prefix
   return new Pipeline(scope, name, {
