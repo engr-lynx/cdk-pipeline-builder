@@ -737,7 +737,7 @@
   dependencies:
     "@cspotcode/source-map-consumer" "0.8.0"
 
-"@engr-lynx/cdk-service-patterns@0.122.0":
+"@engr-lynx/cdk-service-patterns@~0.122.0":
   version "0.122.0"
   resolved "https://registry.yarnpkg.com/@engr-lynx/cdk-service-patterns/-/cdk-service-patterns-0.122.0.tgz#7e40d9cd1f624243f12326d4e71aaa4391d25802"
   integrity sha512-ysGceueDamQJcGt40q1ZqpamPlBHRoYv9ID8DBtMh/NDhRr5BH0SI05XOPaAbU0o56Wj9HvgBZYYQKTwJaPiNg==
