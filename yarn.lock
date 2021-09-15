@@ -738,9 +738,9 @@
     "@cspotcode/source-map-consumer" "0.8.0"
 
 "@engr-lynx/cdk-service-patterns@~0.122.0":
-  version "0.122.0"
-  resolved "https://registry.yarnpkg.com/@engr-lynx/cdk-service-patterns/-/cdk-service-patterns-0.122.0.tgz#7e40d9cd1f624243f12326d4e71aaa4391d25802"
-  integrity sha512-ysGceueDamQJcGt40q1ZqpamPlBHRoYv9ID8DBtMh/NDhRr5BH0SI05XOPaAbU0o56Wj9HvgBZYYQKTwJaPiNg==
+  version "0.122.1"
+  resolved "https://registry.yarnpkg.com/@engr-lynx/cdk-service-patterns/-/cdk-service-patterns-0.122.1.tgz#d1e4e27f0c461ccbe3b82ce834499f8c1e7749b3"
+  integrity sha512-tNuJ/2lRQ2lbwuTw4/MHPuh0jihQs4sYy0cNVY2ui/RLBLz2lMa74LC6Mo4sCZkEbDZzn4Iqr7Zemk7uxeyQqQ==
   dependencies:
     "@aws-cdk/aws-apprunner" "1.122.0"
     "@aws-cdk/aws-cloudfront" "1.122.0"
