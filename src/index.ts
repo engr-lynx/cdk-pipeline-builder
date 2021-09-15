@@ -21,6 +21,7 @@ import {
 } from '@aws-cdk/aws-codepipeline-actions'
 import {
   Repository,
+  IRepository,
 } from '@aws-cdk/aws-codecommit'
 import {
   PipelineProject,
@@ -202,73 +203,76 @@ export interface S3SourceActionProps extends BasePipelineBuilderProps, S3SourceC
 
 export type SourceActionProps = CodeCommitSourceActionProps | GitHubSourceActionProps | S3SourceActionProps
 
-export function createSourceAction (scope: Construct, sourceActionProps: SourceActionProps) {
-  const prefix = sourceActionProps.prefix ?? 'Source'
-  const sourceArtifactId = prefix + 'Artifact'
-  const sourceArtifact = new Artifact(sourceArtifactId)
-  const sourceId = prefix
-  const actionName = prefix
-  let source
-  let action
-  switch(sourceActionProps.type) {
-    case SourceType.CodeCommit:
-      const codeCommitSourceActionProps = sourceActionProps as CodeCommitSourceActionProps
-      source = codeCommitSourceActionProps.create ?
-        new Repository(scope, sourceId, {
-          repositoryName: codeCommitSourceActionProps.name,
-        }) :
-        Repository.fromRepositoryName(scope, sourceId, codeCommitSourceActionProps.name)
-      action = new CodeCommitSourceAction({
-        actionName,
-        output: sourceArtifact,
-        repository: source,
-      })
-      break
-    case SourceType.GitHub:
-      const gitHubSourceActionProps = sourceActionProps as GitHubSourceActionProps
-      const gitHubToken = SecretValue.secretsManager(gitHubSourceActionProps.tokenName)
-      action = new GitHubSourceAction({
-        actionName,
-        output: sourceArtifact,
-        oauthToken: gitHubToken,
-        owner: gitHubSourceActionProps.owner,
-        repo: gitHubSourceActionProps.name,
-      })
-      break
-    case SourceType.S3:
-      const s3SourceActionProps = sourceActionProps as S3SourceActionProps
-      const removalPolicy = sourceActionProps.deleteSourceWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
-      source = new Bucket(scope, sourceId, {
-        versioned: true,
-        removalPolicy,
-      })
-      if (sourceActionProps.deleteSourceWithApp) {
-        const entry = join(__dirname, 'custom-resource', 'empty-bucket')
-        const properties = {
-          bucketName: source.bucketName,
-        }
-        const emptySourceResource = new PythonResource(scope, 'EmptySourceResource', {
-          entry,
-          properties,
+export class SourceAction extends Construct {
+
+  public readonly action: Action
+  public readonly sourceCode: Artifact
+  public readonly source: Bucket | IRepository
+
+  constructor(scope: Construct, id: string, props: SourceActionProps) {
+    super(scope, id)
+    const output = new Artifact('SourceCode')
+    const sourceId = 'Source'
+    const actionName = 'Source'
+    switch(props.type) {
+      case SourceType.CodeCommit:
+        const codeCommitSourceActionProps = props as CodeCommitSourceActionProps
+        const repository = codeCommitSourceActionProps.create ?
+          new Repository(this, sourceId, {
+            repositoryName: codeCommitSourceActionProps.name,
+          }) :
+          Repository.fromRepositoryName(this, sourceId, codeCommitSourceActionProps.name)
+        this.action = new CodeCommitSourceAction({
+          actionName,
+          output,
+          repository,
         })
-        source.grantRead(emptySourceResource.handler)
-        source.grantDelete(emptySourceResource.handler)
-      }
-      action = new S3SourceAction({
-        actionName,
-        output: sourceArtifact,
-        bucket: source,
-        bucketKey: s3SourceActionProps.key,
-      })
-      break
-    default:
-      throw new Error('Unsupported Type')
+        this.source = repository
+        break
+      case SourceType.GitHub:
+        const gitHubSourceActionProps = props as GitHubSourceActionProps
+        const gitHubToken = SecretValue.secretsManager(gitHubSourceActionProps.tokenName)
+        this.action = new GitHubSourceAction({
+          actionName,
+          output,
+          oauthToken: gitHubToken,
+          owner: gitHubSourceActionProps.owner,
+          repo: gitHubSourceActionProps.name,
+        })
+        break
+      case SourceType.S3:
+        const s3SourceActionProps = props as S3SourceActionProps
+        const removalPolicy = props.deleteSourceWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
+        const bucket = new Bucket(this, sourceId, {
+          versioned: true,
+          removalPolicy,
+        })
+        if (props.deleteSourceWithApp) {
+          const entry = join(__dirname, 'custom-resource', 'empty-bucket')
+          const properties = {
+            bucketName: bucket.bucketName,
+          }
+          const emptySourceResource = new PythonResource(this, 'EmptySourceResource', {
+            entry,
+            properties,
+          })
+          bucket.grantRead(emptySourceResource.handler)
+          bucket.grantDelete(emptySourceResource.handler)
+        }
+        this.action = new S3SourceAction({
+          actionName,
+          output,
+          bucket,
+          bucketKey: s3SourceActionProps.key,
+        })
+        this.source = bucket
+        break
+      default:
+        throw new Error('Unsupported Type')
+    }
+    this.sourceCode = output
   }
-  return {
-    action,
-    sourceArtifact,
-    source,
-  }
+
 }
 
 export interface BaseBuildProps extends BasePipelineBuilderProps {
@@ -461,138 +465,141 @@ export interface ImageBuildActionProps extends BaseBuildProps, ImageBuildConfig 
   readonly postbuildCommands?: string[],
 }
 
-export function createImageBuildAction (scope: Construct, imageBuildActionProps: ImageBuildActionProps) {
-  const prefix = imageBuildActionProps.prefix ?? 'Build'
-  const imageRepoId = prefix + 'Repo'
-  const removalPolicy = imageBuildActionProps.deleteRepoWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
-  const imageRepo = new EcrRepository(scope, imageRepoId, {
-    removalPolicy,
-  })
-  if (imageBuildActionProps.deleteRepoWithApp) {
-    const entry = join(__dirname, 'custom-resource', 'empty-repo')
-    const properties = {
-      imageRepoName: imageRepo.repositoryName,
-    }
-    const emptyRepoResource = new PythonResource(scope, 'EmptyRepoResource', {
-      entry,
-      properties,
+export class ImageBuildAction extends Construct {
+
+  public readonly action: Action
+  public readonly project: PipelineProject
+  public readonly repo: EcrRepository
+
+  constructor(scope: Construct, id: string, props: ImageBuildActionProps) {
+    super(scope, id)
+    const removalPolicy = props.deleteRepoWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
+    const repo = new EcrRepository(this, 'Repo', {
+      removalPolicy,
     })
-    // ToDo: Aggregate grant to delete.
-    imageRepo.grant(emptyRepoResource.handler, 'ecr:ListImages', 'ecr:BatchDeleteImage')
-  }
-  const runtimes ={
-    ...imageBuildActionProps.inRuntimes,
-    ...imageBuildActionProps.runtimes,
-  }
-  const allRuntimes = {
-    ...runtimes,
-    docker: 19,
-  }
-  const envVarArgs ={
-    ...imageBuildActionProps.inEnvVarArgs,
-    ...imageBuildActionProps.envVarArgs,
-  }
-  const envVars = {
-    ...imageBuildActionProps.inEnvVars,
-    ...imageBuildActionProps.envVars,
-  }
-  const envSecretArgs ={
-    ...imageBuildActionProps.inEnvSecretArgs,
-    ...imageBuildActionProps.envSecretArgs,
-  }
-  const envSecrets = {
-    ...imageBuildActionProps.inEnvSecrets,
-    ...imageBuildActionProps.envSecrets,
-  }
-  const allEnvVars = {
-    ...envVarArgs,
-    ...envVars,
-    DOCKER_BUILDKIT: 1,
-  }
-  const allEnvSecrets = {
-    ...envSecretArgs,
-    ...envSecrets,
-  }
-  const imageRepoTag = imageRepo.repositoryUri + ':latest'
-  const installCommands = []
-  installCommands.push(...imageBuildActionProps.installCommands ?? [])
-  if (imageBuildActionProps.installScript) {
-    installCommands.push('. ./' + imageBuildActionProps.installScript)
-  }
-  const prebuildCommands = []
-  prebuildCommands.push(...imageBuildActionProps.prebuildCommands ?? [])
-  if (imageBuildActionProps.prebuildScript) {
-    prebuildCommands.push('. ./' + imageBuildActionProps.prebuildScript)
-  }
-  prebuildCommands.push(
-    'aws ecr get-login-password | docker login --username AWS --password-stdin ' + imageRepo.repositoryUri,
-    'docker pull ' + imageRepoTag + ' || true',
-  )
-  const envVarArgKeys = Object.keys(envVarArgs ?? {})
-  const envSecretArgKeys = Object.keys(envSecretArgs ?? {})
-  let argKeys: string[] = []
-  argKeys = argKeys.concat(envVarArgKeys).concat(envSecretArgKeys)
-  const buildArgs = argKeys.map(argKey => '--build-arg ' + argKey + '=${' + argKey + '}')
-  const buildCommandParts = [
-    'docker build --build-arg BUILDKIT_INLINE_CACHE=1',
-  ].concat(buildArgs)
-  buildCommandParts.push(
-    '--cache-from ' + imageRepoTag + ' -t ' + imageRepoTag + ' .',
-  )
-  const buildCommand = buildCommandParts.join(' ')
-  const postbuildCommands = []
-  postbuildCommands.push(
-    'docker push ' + imageRepo.repositoryUri,
-  )
-  if (imageBuildActionProps.postbuildScript) {
-    postbuildCommands.push('. ./' + imageBuildActionProps.postbuildScript)
-  }
-  postbuildCommands.push(...imageBuildActionProps.postbuildCommands ?? [])
-  const imageSpec = BuildSpec.fromObjectToYaml({
-    version: '0.2',
-    env: {
-      variables: allEnvVars,
-      'secrets-manager': allEnvSecrets,
-    },
-    phases: {
-      install: {
-        'runtime-versions': allRuntimes,
-        commands: installCommands,
+    if (props.deleteRepoWithApp) {
+      const entry = join(__dirname, 'custom-resource', 'empty-repo')
+      const properties = {
+        imageRepoName: repo.repositoryName,
+      }
+      const emptyRepoResource = new PythonResource(this, 'EmptyRepoResource', {
+        entry,
+        properties,
+      })
+      // ToDo: Aggregate grant to delete.
+      repo.grant(emptyRepoResource.handler, 'ecr:ListImages', 'ecr:BatchDeleteImage')
+    }
+    const runtimes ={
+      ...props.inRuntimes,
+      ...props.runtimes,
+    }
+    const allRuntimes = {
+      ...runtimes,
+      docker: 19,
+    }
+    const envVarArgs ={
+      ...props.inEnvVarArgs,
+      ...props.envVarArgs,
+    }
+    const envVars = {
+      ...props.inEnvVars,
+      ...props.envVars,
+    }
+    const envSecretArgs ={
+      ...props.inEnvSecretArgs,
+      ...props.envSecretArgs,
+    }
+    const envSecrets = {
+      ...props.inEnvSecrets,
+      ...props.envSecrets,
+    }
+    const allEnvVars = {
+      ...envVarArgs,
+      ...envVars,
+      DOCKER_BUILDKIT: 1,
+    }
+    const allEnvSecrets = {
+      ...envSecretArgs,
+      ...envSecrets,
+    }
+    const imageRepoTag = repo.repositoryUri + ':latest'
+    const installCommands = []
+    installCommands.push(...props.installCommands ?? [])
+    if (props.installScript) {
+      installCommands.push('. ./' + props.installScript)
+    }
+    const prebuildCommands = []
+    prebuildCommands.push(...props.prebuildCommands ?? [])
+    if (props.prebuildScript) {
+      prebuildCommands.push('. ./' + props.prebuildScript)
+    }
+    prebuildCommands.push(
+      'aws ecr get-login-password | docker login --username AWS --password-stdin ' + repo.repositoryUri,
+      'docker pull ' + imageRepoTag + ' || true',
+    )
+    const envVarArgKeys = Object.keys(envVarArgs ?? {})
+    const envSecretArgKeys = Object.keys(envSecretArgs ?? {})
+    let argKeys: string[] = []
+    argKeys = argKeys.concat(envVarArgKeys).concat(envSecretArgKeys)
+    const buildArgs = argKeys.map(argKey => '--build-arg ' + argKey + '=${' + argKey + '}')
+    const buildCommandParts = [
+      'docker build --build-arg BUILDKIT_INLINE_CACHE=1',
+    ].concat(buildArgs)
+    buildCommandParts.push(
+      '--cache-from ' + imageRepoTag + ' -t ' + imageRepoTag + ' .',
+    )
+    const buildCommand = buildCommandParts.join(' ')
+    const postbuildCommands = []
+    postbuildCommands.push(
+      'docker push ' + repo.repositoryUri,
+    )
+    if (props.postbuildScript) {
+      postbuildCommands.push('. ./' + props.postbuildScript)
+    }
+    postbuildCommands.push(...props.postbuildCommands ?? [])
+    const imageSpec = BuildSpec.fromObjectToYaml({
+      version: '0.2',
+      env: {
+        variables: allEnvVars,
+        'secrets-manager': allEnvSecrets,
       },
-      pre_build: {
-        commands: prebuildCommands,
+      phases: {
+        install: {
+          'runtime-versions': allRuntimes,
+          commands: installCommands,
+        },
+        pre_build: {
+          commands: prebuildCommands,
+        },
+        build: {
+          commands: buildCommand,
+        },
+        post_build: {
+          commands: postbuildCommands,
+        },
       },
-      build: {
-        commands: buildCommand,
-      },
-      post_build: {
-        commands: postbuildCommands,
-      },
-    },
-  })
-  const computeType = mapCompute(imageBuildActionProps.compute)
-  const linuxPrivilegedEnv = {
-    computeType,
-    buildImage: LinuxBuildImage.AMAZON_LINUX_2_3,
-    privileged: true,
+    })
+    const computeType = mapCompute(props.compute)
+    const linuxPrivilegedEnv = {
+      computeType,
+      buildImage: LinuxBuildImage.AMAZON_LINUX_2_3,
+      privileged: true,
+    }
+    const project = new PipelineProject(this, 'Project', {
+      environment: linuxPrivilegedEnv,
+      buildSpec: imageSpec,
+    })
+    repo.grantPullPush(project)
+    const actionName = 'Build'
+    this.action = new CodeBuildAction({
+      actionName,
+      project,
+      input: props.sourceCode,
+    })
+    this.project = project
+    this.repo = repo
   }
-  const projectName = prefix + 'Project'
-  const imageProject = new PipelineProject(scope, projectName, {
-    environment: linuxPrivilegedEnv,
-    buildSpec: imageSpec,
-  })
-  imageRepo.grantPullPush(imageProject)
-  const actionName = prefix
-  const action = new CodeBuildAction({
-    actionName,
-    project: imageProject,
-    input: imageBuildActionProps.sourceCode,
-  })
-  return {
-    action,
-    grantee: imageProject,
-    imageRepo,
-  }
+
 }
 
 export interface DroidBuildActionProps extends BaseBuildProps, DroidBuildConfig {
