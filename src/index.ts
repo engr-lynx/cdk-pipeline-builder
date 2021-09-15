@@ -5,7 +5,6 @@ import {
   SecretValue,
   Construct,
   RemovalPolicy,
-  CustomResource,
 } from '@aws-cdk/core'
 import {
   Artifact,
@@ -44,16 +43,12 @@ import {
   PythonFunction,
 } from '@aws-cdk/aws-lambda-python'
 import {
-  PolicyStatement,
-} from '@aws-cdk/aws-iam'
-import {
-  Provider,
-} from '@aws-cdk/custom-resources'
-import {
   Cdn,
+  PythonResource,
 } from '@engr-lynx/cdk-service-patterns'
 
-// ToDo: Unify naming (including prefix usage)
+// ToDo: These functions should be made into Resources or Constructs implementing IGrantable.
+// ToDo: Unify naming (including prefix usage).
 // ToDo: Coding standards: flatten nested tabs; operator spacing
 
 // Config Definitions
@@ -248,26 +243,16 @@ export function createSourceAction (scope: Construct, sourceActionProps: SourceA
         removalPolicy,
       })
       if (sourceActionProps.deleteSourceWithApp) {
-        // ToDo: Put PythonFunction + Provider + CustomResource in a module.
         const entry = join(__dirname, 'custom-resource', 'empty-bucket')
-        const handlerId = prefix + 'EmptySourceHandler'
-        const onEventHandler = new PythonFunction(scope, handlerId, {
-          entry,
-        })
-        source.grantRead(onEventHandler)
-        source.grantDelete(onEventHandler)
-        const providerId = prefix + 'EmptySourceProvider'
-        const provider = new Provider(scope, providerId, {
-          onEventHandler,
-        })
         const properties = {
           bucketName: source.bucketName,
         }
-        const resourceId = prefix + 'EmptySourceResource'
-        new CustomResource(scope, resourceId, {
-          serviceToken: provider.serviceToken,
+        const emptySourceResource = new PythonResource(scope, 'EmptySourceResource', {
+          entry,
           properties,
         })
+        source.grantRead(emptySourceResource.handler)
+        source.grantDelete(emptySourceResource.handler)
       }
       action = new S3SourceAction({
         actionName,
@@ -484,26 +469,16 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
     removalPolicy,
   })
   if (imageBuildActionProps.deleteRepoWithApp) {
-    // ToDo: Put PythonFunction + Provider + CustomResource in a module.
     const entry = join(__dirname, 'custom-resource', 'empty-repo')
-    const handlerId = prefix + 'EmptyRepoHandler'
-    const onEventHandler = new PythonFunction(scope, handlerId, {
-      entry,
-    })
-    // ToDo: Aggregate grant to empty
-    imageRepo.grant(onEventHandler, 'ecr:ListImages', 'ecr:BatchDeleteImage')
-    const providerId = prefix + 'EmptyRepoProvider'
-    const provider = new Provider(scope, providerId, {
-      onEventHandler,
-    })
     const properties = {
       imageRepoName: imageRepo.repositoryName,
     }
-    const resourceId = prefix + 'EmptyRepoResource'
-    new CustomResource(scope, resourceId, {
-      serviceToken: provider.serviceToken,
+    const emptyRepoResource = new PythonResource(scope, 'EmptyRepoResource', {
+      entry,
       properties,
     })
+    // ToDo: Aggregate grant to delete.
+    imageRepo.grant(emptyRepoResource.handler, 'ecr:ListImages', 'ecr:BatchDeleteImage')
   }
   const runtimes ={
     ...imageBuildActionProps.inRuntimes,
@@ -532,11 +507,13 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
   const allEnvVars = {
     ...envVarArgs,
     ...envVars,
+    DOCKER_BUILDKIT: 1,
   }
   const allEnvSecrets = {
     ...envSecretArgs,
     ...envSecrets,
   }
+  const imageRepoTag = imageRepo.repositoryUri + ':latest'
   const installCommands = []
   installCommands.push(...imageBuildActionProps.installCommands ?? [])
   if (imageBuildActionProps.installScript) {
@@ -549,7 +526,7 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
   }
   prebuildCommands.push(
     'aws ecr get-login-password | docker login --username AWS --password-stdin ' + imageRepo.repositoryUri,
-    'docker pull ' + imageRepo.repositoryUri + ':latest || true',
+    'docker pull ' + imageRepoTag + ' || true',
   )
   const envVarArgKeys = Object.keys(envVarArgs ?? {})
   const envSecretArgKeys = Object.keys(envSecretArgs ?? {})
@@ -557,10 +534,10 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
   argKeys = argKeys.concat(envVarArgKeys).concat(envSecretArgKeys)
   const buildArgs = argKeys.map(argKey => '--build-arg ' + argKey + '=${' + argKey + '}')
   const buildCommandParts = [
-    'DOCKER_BUILDKIT=1 docker build --build-arg BUILDKIT_INLINE_CACHE=1',
+    'docker build --build-arg BUILDKIT_INLINE_CACHE=1',
   ].concat(buildArgs)
   buildCommandParts.push(
-    '--cache-from ' + imageRepo.repositoryUri + ':latest -t ' + imageRepo.repositoryUri + ':latest .',
+    '--cache-from ' + imageRepoTag + ' -t ' + imageRepoTag + ' .',
   )
   const buildCommand = buildCommandParts.join(' ')
   const postbuildCommands = []
@@ -776,7 +753,6 @@ export interface SpecDefinedTestActionProps extends BasePipelineBuilderProps, Sp
   input: Artifact,
 }
 
-// ToDo: Rename from custom to user-defined.
 export function createSpecDefinedTestAction (scope: Construct, specDefinedTestActionProps: SpecDefinedTestActionProps) {
   const prefix = specDefinedTestActionProps.prefix ?? 'Test'
   const artifactId = prefix + 'Artifact'
@@ -813,13 +789,7 @@ export function createSpecDefinedTestAction (scope: Construct, specDefinedTestAc
   }
 }
 
-interface Policy {
-  actions: string[],
-  resources: string [],
-}
-
 export interface PyInvokeActionProps extends BasePipelineBuilderProps {
-  policies?: Policy[],
   path: string,
   index?: string,
   handler?: string,
@@ -829,14 +799,12 @@ export interface PyInvokeActionProps extends BasePipelineBuilderProps {
 
 export function createPyInvokeAction (scope: Construct, pyInvokeActionProps: PyInvokeActionProps) {
   const prefix = pyInvokeActionProps.prefix ?? 'Invoke'
-  const initialPolicy = pyInvokeActionProps.policies?.map(policy => new PolicyStatement(policy))
   const entry = join(__dirname, pyInvokeActionProps.path)
   const handlerName = prefix + 'Handler'
   const lambda = new PythonFunction(scope, handlerName, {
     entry,
     index: pyInvokeActionProps.index,
     handler: pyInvokeActionProps.handler,
-    initialPolicy,
   })
   const actionName = prefix
   const action = new LambdaInvokeAction({
@@ -868,26 +836,16 @@ export function createPipeline (scope: Construct, pipelineProps: PipelineProps) 
     removalPolicy,
   })
   if (pipelineProps.deleteArtifactsWithApp) {
-    // ToDo: Put PythonFunction + Provider + CustomResource in a module.
     const entry = join(__dirname, 'custom-resource', 'empty-bucket')
-    const handlerId = prefix + 'EmptyArtifactsHandler'
-    const onEventHandler = new PythonFunction(scope, handlerId, {
-      entry,
-    })
-    artifactBucket.grantRead(onEventHandler)
-    artifactBucket.grantDelete(onEventHandler)
-    const providerId = prefix + 'EmptyArtifactsProvider'
-    const provider = new Provider(scope, providerId, {
-      onEventHandler,
-    })
     const properties = {
       bucketName: artifactBucket.bucketName,
     }
-    const resourceId = prefix + 'EmptyArtifactsResource'
-    new CustomResource(scope, resourceId, {
-      serviceToken: provider.serviceToken,
+    const emptyArtifactsResource = new PythonResource(scope, 'EmptyArtifactsResource', {
+      entry,
       properties,
     })
+    artifactBucket.grantRead(emptyArtifactsResource.handler)
+    artifactBucket.grantDelete(emptyArtifactsResource.handler)
   }
   const name = prefix
   return new Pipeline(scope, name, {
