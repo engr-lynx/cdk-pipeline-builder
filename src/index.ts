@@ -69,25 +69,25 @@ export enum SourceType {
 }
 
 interface BaseSourceConfig {
-  type: SourceType,
+  readonly type: SourceType,
 }
 
 export interface CodeCommitSourceConfig extends BaseSourceConfig {
-  type: SourceType.CodeCommit,
-  name: string,
-  create?: boolean,
+  readonly type: SourceType.CodeCommit,
+  readonly name: string,
+  readonly create?: boolean,
 }
 
 export interface GitHubSourceConfig extends BaseSourceConfig {
-  type: SourceType.GitHub,
-  name: string,
-  tokenName: string,
-  owner: string,
+  readonly type: SourceType.GitHub,
+  readonly name: string,
+  readonly tokenName: string,
+  readonly owner: string,
 }
 
 export interface S3SourceConfig extends BaseSourceConfig {
-  type: SourceType.S3,
-  deleteSourceWithApp?: boolean,
+  readonly type: SourceType.S3,
+  readonly deleteSourceWithApp?: boolean,
 }
 
 export enum ComputeSize {
@@ -98,36 +98,36 @@ export enum ComputeSize {
 }
 
 interface BaseComputeStageConfig {
-  compute?: ComputeSize,
+  readonly compute?: ComputeSize,
 }
 
 export interface KeyValue {
-  [key: string]: string | number,
+  readonly [key: string]: string | number,
 }
 
 interface BaseCustomBuildConfig extends BaseComputeStageConfig {
-  runtimes?: KeyValue,
-  installScript?: string,
-  prebuildScript?: string,
-  postbuildScript?: string,
-  envVars?: KeyValue,
-  envSecrets?: KeyValue,
+  readonly runtimes?: KeyValue,
+  readonly installScript?: string,
+  readonly prebuildScript?: string,
+  readonly postbuildScript?: string,
+  readonly envVars?: KeyValue,
+  readonly envSecrets?: KeyValue,
 }
 
 export interface ImageBuildConfig extends BaseCustomBuildConfig {
-  envVarArgs?: KeyValue,
-  envSecretArgs?: KeyValue,
-  deleteRepoWithApp?: boolean,
+  readonly envVarArgs?: KeyValue,
+  readonly envSecretArgs?: KeyValue,
+  readonly deleteRepoWithApp?: boolean,
 }
 
 export interface DroidBuildConfig extends BaseCustomBuildConfig {}
 
 interface BaseSpecDefinedStageConfig extends BaseComputeStageConfig {
-  specFilename?: string,
+  readonly specFilename?: string,
 }
 
 export interface SpecDefinedBuildConfig extends BaseSpecDefinedStageConfig {
-  privileged?: boolean,
+  readonly privileged?: boolean,
 }
 
 export interface SpecDefinedStagingConfig extends BaseSpecDefinedStageConfig {}
@@ -135,7 +135,7 @@ export interface SpecDefinedStagingConfig extends BaseSpecDefinedStageConfig {}
 export interface SpecDefinedTestConfig extends BaseSpecDefinedStageConfig {}
 
 interface BaseValidateConfig {
-  emails?: string[],
+  readonly emails?: string[],
 }
 
 export interface SpecDefinedValidateConfig extends BaseSpecDefinedStageConfig, BaseValidateConfig {}
@@ -155,21 +155,21 @@ export type ValidateConfig = SpecDefinedValidateConfig
 export type DeployConfig = SpecDefinedDeployConfig
 
 interface BasePipelineConfig {
-  deleteArtifactsWithApp?: boolean,
-  restartExecutionOnUpdate?: boolean,
-  source: SourceConfig,
+  readonly deleteArtifactsWithApp?: boolean,
+  readonly restartExecutionOnUpdate?: boolean,
+  readonly source: SourceConfig,
 }
 
 export interface AppPipelineConfig extends BasePipelineConfig {
-  build?: BuildConfig,
-  staging?: StagingConfig,
-  test?: TestConfig,
-  validate?: ValidateConfig,
-  deploy?: DeployConfig,
+  readonly build?: BuildConfig,
+  readonly staging?: StagingConfig,
+  readonly test?: TestConfig,
+  readonly validate?: ValidateConfig,
+  readonly deploy?: DeployConfig,
 }
 
 export interface DeployableAppConfig {
-  pipeline: AppPipelineConfig,
+  readonly pipeline: AppPipelineConfig,
 }
 
 export interface YarnSynthConfig extends BaseComputeStageConfig {}
@@ -177,19 +177,19 @@ export interface YarnSynthConfig extends BaseComputeStageConfig {}
 export type SynthConfig = YarnSynthConfig
 
 export interface ArchiPipelineConfig extends BasePipelineConfig {
-  synth?: SynthConfig,
-  validate?: ValidateConfig,
+  readonly synth?: SynthConfig,
+  readonly validate?: ValidateConfig,
 }
 
 export interface DeployableArchiConfig {
-  pipeline: ArchiPipelineConfig,
+  readonly pipeline: ArchiPipelineConfig,
 }
 
 // Builder Functions
 
 // ToDo: Reorganize Props interfaces similar to Config interfaces
 interface BasePipelineBuilderProps {
-  prefix?: string,
+  readonly prefix?: string,
 }
 
 export interface CodeCommitSourceActionProps extends BasePipelineBuilderProps, CodeCommitSourceConfig {}
@@ -197,7 +197,7 @@ export interface CodeCommitSourceActionProps extends BasePipelineBuilderProps, C
 export interface GitHubSourceActionProps extends BasePipelineBuilderProps, GitHubSourceConfig {}
 
 export interface S3SourceActionProps extends BasePipelineBuilderProps, S3SourceConfig {
-  key: string,
+  readonly key: string,
 }
 
 export type SourceActionProps = CodeCommitSourceActionProps | GitHubSourceActionProps | S3SourceActionProps
@@ -272,11 +272,11 @@ export function createSourceAction (scope: Construct, sourceActionProps: SourceA
 }
 
 export interface BaseBuildProps extends BasePipelineBuilderProps {
-  sourceCode: Artifact,
+  readonly sourceCode: Artifact,
 }
 
 export interface YarnSynthActionProps extends BaseBuildProps, YarnSynthConfig {
-  cacheBucket: IBucket,
+  readonly cacheBucket: IBucket,
 }
 
 export function createYarnSynthAction (scope: Construct, yarnSynthActionProps: YarnSynthActionProps) {
@@ -353,9 +353,9 @@ export function createYarnSynthAction (scope: Construct, yarnSynthActionProps: Y
 }
 
 export interface ArchiValidateActionProps extends BasePipelineBuilderProps, ValidateConfig {
-  cloudAssembly: Artifact,
-  runOrder?: number,
-  cacheBucket: IBucket,
+  readonly cloudAssembly: Artifact,
+  readonly runOrder?: number,
+  readonly cacheBucket: IBucket,
 }
 
 export function createArchiValidateAction (scope: Construct, archiValidateActionProps: ArchiValidateActionProps) {
@@ -451,14 +451,14 @@ export function createArchiValidateAction (scope: Construct, archiValidateAction
 }
 
 export interface ImageBuildActionProps extends BaseBuildProps, ImageBuildConfig {
-  inRuntimes?: KeyValue,
-  inEnvVars?: KeyValue,
-  inEnvSecrets?: KeyValue,
-  inEnvVarArgs?: KeyValue,
-  inEnvSecretArgs?: KeyValue,
-  installCommands?: string[],
-  prebuildCommands?: string[],
-  postbuildCommands?: string[],
+  readonly inRuntimes?: KeyValue,
+  readonly inEnvVars?: KeyValue,
+  readonly inEnvSecrets?: KeyValue,
+  readonly inEnvVarArgs?: KeyValue,
+  readonly inEnvSecretArgs?: KeyValue,
+  readonly installCommands?: string[],
+  readonly prebuildCommands?: string[],
+  readonly postbuildCommands?: string[],
 }
 
 export function createImageBuildAction (scope: Construct, imageBuildActionProps: ImageBuildActionProps) {
@@ -596,13 +596,13 @@ export function createImageBuildAction (scope: Construct, imageBuildActionProps:
 }
 
 export interface DroidBuildActionProps extends BaseBuildProps, DroidBuildConfig {
-  inRuntimes?: KeyValue,
-  inEnvVars?: KeyValue,
-  inEnvSecrets?: KeyValue,
-  installCommands?: string[],
-  prebuildCommands?: string[]
-  postbuildCommands?: string[]
-  cacheBucket: IBucket,
+  readonly inRuntimes?: KeyValue,
+  readonly inEnvVars?: KeyValue,
+  readonly inEnvSecrets?: KeyValue,
+  readonly installCommands?: string[],
+  readonly prebuildCommands?: string[]
+  readonly postbuildCommands?: string[]
+  readonly cacheBucket: IBucket,
 }
 
 export function createDroidBuildAction (scope: Construct, droidBuildActionProps: DroidBuildActionProps) {
@@ -709,7 +709,7 @@ export function createDroidBuildAction (scope: Construct, droidBuildActionProps:
 }
 
 export interface SpecDefinedActionProps {
-  cacheBucket: IBucket,
+  readonly cacheBucket: IBucket,
 }
 
 export interface SpecDefinedBuildActionProps extends BaseBuildProps, SpecDefinedActionProps, SpecDefinedBuildConfig {}
@@ -750,7 +750,7 @@ export function createSpecDefinedBuildAction (scope: Construct, specDefinedBuild
 }
 
 export interface SpecDefinedTestActionProps extends BasePipelineBuilderProps, SpecDefinedActionProps, TestConfig {
-  input: Artifact,
+  readonly input: Artifact,
 }
 
 export function createSpecDefinedTestAction (scope: Construct, specDefinedTestActionProps: SpecDefinedTestActionProps) {
@@ -790,11 +790,11 @@ export function createSpecDefinedTestAction (scope: Construct, specDefinedTestAc
 }
 
 export interface PyInvokeActionProps extends BasePipelineBuilderProps {
-  path: string,
-  index?: string,
-  handler?: string,
-  params?: KeyValue,
-  runOrder?: number,
+  readonly path: string,
+  readonly index?: string,
+  readonly handler?: string,
+  readonly params?: KeyValue,
+  readonly runOrder?: number,
 }
 
 export function createPyInvokeAction (scope: Construct, pyInvokeActionProps: PyInvokeActionProps) {
@@ -820,12 +820,12 @@ export function createPyInvokeAction (scope: Construct, pyInvokeActionProps: PyI
 }
 
 export interface StageProps {
-  stageName: string,
-  actions: Action[],
+  readonly stageName: string,
+  readonly actions: Action[],
 }
 
 export interface PipelineProps extends BasePipelineBuilderProps, BasePipelineConfig {
-  stages: StageProps[],
+  readonly stages: StageProps[],
 }
 
 export function createPipeline (scope: Construct, pipelineProps: PipelineProps) {
