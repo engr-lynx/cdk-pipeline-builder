@@ -477,6 +477,7 @@ export class ImageBuildAction extends Construct {
     const repo = new EcrRepository(this, 'Repo', {
       removalPolicy,
     })
+    // !ToDo: Use image assets instead of pulling from npm?
     if (props.deleteRepoWithApp) {
       const entry = join(__dirname, 'custom-resource', 'empty-repo')
       const properties = {
@@ -842,6 +843,7 @@ export function createPipeline (scope: Construct, pipelineProps: PipelineProps) 
   const artifactBucket = new Bucket(scope, artifactBucketId, {
     removalPolicy,
   })
+  // !ToDo: Use image assets instead of pulling from npm?
   if (pipelineProps.deleteArtifactsWithApp) {
     const entry = join(__dirname, 'custom-resource', 'empty-bucket')
     const properties = {
