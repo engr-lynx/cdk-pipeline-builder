@@ -32,6 +32,7 @@ import {
 } from '@aws-cdk/aws-codebuild'
 import {
   Repository as EcrRepository,
+  IRepository as IEcrRepository,
 } from '@aws-cdk/aws-ecr'
 import {
   Bucket,
@@ -121,6 +122,8 @@ interface BaseCustomBuildConfig extends BaseComputeStageConfig {
 export interface ImageBuildConfig extends BaseCustomBuildConfig {
   readonly envVarArgs?: KeyValue,
   readonly envSecretArgs?: KeyValue,
+  readonly createRepo?: boolean,
+  readonly repoName?: string,
   readonly deleteRepoWithApp?: boolean,
 }
 
@@ -459,14 +462,22 @@ export class ImageBuildAction extends Construct {
 
   public readonly action: Action
   public readonly project: PipelineProject
-  public readonly repo: EcrRepository
+  public readonly repo: IEcrRepository
 
   constructor(scope: Construct, id: string, props: ImageBuildActionProps) {
     super(scope, id)
-    const removalPolicy = props.deleteRepoWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
-    const repo = new StackRemovableRepository(this, 'Repo', {
-      removalPolicy,
-    })
+    let repo
+    if (props.createRepo) {
+      const removalPolicy = props.deleteRepoWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
+      repo = new StackRemovableRepository(this, 'Repo', {
+        removalPolicy,
+      })  
+    } else {
+      if (!props.repoName) {
+        throw new PipelineConfigError("Repository name is required if you don't to create it here.")
+      }
+      repo = EcrRepository.fromRepositoryName(this, 'Repo', props.repoName)
+    }
     const runtimes ={
       ...props.inRuntimes,
       ...props.runtimes,
