@@ -159,7 +159,7 @@ export type DeployConfig = SpecDefinedDeployConfig
 interface BasePipelineConfig {
   readonly deleteArtifactsWithApp?: boolean,
   readonly restartExecutionOnUpdate?: boolean,
-  readonly source?: SourceConfig,
+  readonly source: SourceConfig,
 }
 
 export interface AppPipelineConfig extends BasePipelineConfig {
