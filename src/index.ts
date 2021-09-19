@@ -88,6 +88,7 @@ export interface GitHubSourceConfig extends BaseSourceConfig {
 
 export interface S3SourceConfig extends BaseSourceConfig {
   readonly type: SourceType.S3,
+  readonly key: string,
   readonly deleteSourceWithApp?: boolean,
 }
 
@@ -197,9 +198,7 @@ export interface CodeCommitSourceActionProps extends BasePipelineBuilderProps, C
 
 export interface GitHubSourceActionProps extends BasePipelineBuilderProps, GitHubSourceConfig {}
 
-export interface S3SourceActionProps extends BasePipelineBuilderProps, S3SourceConfig {
-  readonly key: string,
-}
+export interface S3SourceActionProps extends BasePipelineBuilderProps, S3SourceConfig {}
 
 export type SourceActionProps = CodeCommitSourceActionProps | GitHubSourceActionProps | S3SourceActionProps
 
@@ -216,6 +215,7 @@ export class SourceAction extends Construct {
     const actionName = 'Source'
     switch(props.type) {
       case SourceType.CodeCommit:
+        // ToDo: Allow setting removal policy using applyRemovalPolicy.
         const codeCommitSourceActionProps = props as CodeCommitSourceActionProps
         const repository = codeCommitSourceActionProps.create ?
           new Repository(this, sourceId, {
