@@ -45,9 +45,11 @@ import {
 } from '@aws-cdk/aws-lambda-python'
 import {
   Cdn,
-  PythonResource,
+  StackRemovableBucket,
+  StackRemovableRepository,
 } from '@engr-lynx/cdk-service-patterns'
 
+// !ToDo: Use projen (https://www.npmjs.com/package/projen)
 // ToDo: These functions should be made into Resources or Constructs implementing IGrantable.
 // ToDo: Unify naming (including prefix usage).
 // ToDo: Coding standards: flatten nested tabs; operator spacing
@@ -243,22 +245,10 @@ export class SourceAction extends Construct {
       case SourceType.S3:
         const s3SourceActionProps = props as S3SourceActionProps
         const removalPolicy = props.deleteSourceWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
-        const bucket = new Bucket(this, sourceId, {
+        const bucket = new StackRemovableBucket(this, sourceId, {
           versioned: true,
           removalPolicy,
         })
-        if (props.deleteSourceWithApp) {
-          const entry = join(__dirname, 'custom-resource', 'empty-bucket')
-          const properties = {
-            bucketName: bucket.bucketName,
-          }
-          const emptySourceResource = new PythonResource(this, 'EmptySourceResource', {
-            entry,
-            properties,
-          })
-          bucket.grantRead(emptySourceResource)
-          bucket.grantDelete(emptySourceResource)
-        }
         this.action = new S3SourceAction({
           actionName,
           output,
@@ -474,22 +464,9 @@ export class ImageBuildAction extends Construct {
   constructor(scope: Construct, id: string, props: ImageBuildActionProps) {
     super(scope, id)
     const removalPolicy = props.deleteRepoWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
-    const repo = new EcrRepository(this, 'Repo', {
+    const repo = new StackRemovableRepository(this, 'Repo', {
       removalPolicy,
     })
-    // !ToDo: Use image assets instead of pulling from npm?
-    if (props.deleteRepoWithApp) {
-      const entry = join(__dirname, 'custom-resource', 'empty-repo')
-      const properties = {
-        imageRepoName: repo.repositoryName,
-      }
-      const emptyRepoResource = new PythonResource(this, 'EmptyRepoResource', {
-        entry,
-        properties,
-      })
-      // ToDo: Aggregate grant to delete.
-      repo.grant(emptyRepoResource, 'ecr:ListImages', 'ecr:BatchDeleteImage')
-    }
     const runtimes ={
       ...props.inRuntimes,
       ...props.runtimes,
@@ -840,22 +817,9 @@ export function createPipeline (scope: Construct, pipelineProps: PipelineProps) 
   const prefix = pipelineProps.prefix ?? 'Pipeline'
   const artifactBucketId = prefix + 'ArtifactBucket'
   const removalPolicy = pipelineProps.deleteArtifactsWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
-  const artifactBucket = new Bucket(scope, artifactBucketId, {
+  const artifactBucket = new StackRemovableBucket(scope, artifactBucketId, {
     removalPolicy,
   })
-  // !ToDo: Use image assets instead of pulling from npm?
-  if (pipelineProps.deleteArtifactsWithApp) {
-    const entry = join(__dirname, 'custom-resource', 'empty-bucket')
-    const properties = {
-      bucketName: artifactBucket.bucketName,
-    }
-    const emptyArtifactsResource = new PythonResource(scope, 'EmptyArtifactsResource', {
-      entry,
-      properties,
-    })
-    artifactBucket.grantRead(emptyArtifactsResource)
-    artifactBucket.grantDelete(emptyArtifactsResource)
-  }
   const name = prefix
   return new Pipeline(scope, name, {
     stages: pipelineProps.stages,
