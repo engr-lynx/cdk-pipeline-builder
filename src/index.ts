@@ -9,6 +9,7 @@ import {
 import {
   Artifact,
   Pipeline,
+  PipelineProps,
   Action,
 } from '@aws-cdk/aws-codepipeline'
 import {
@@ -45,12 +46,17 @@ import {
   PythonFunction,
 } from '@aws-cdk/aws-lambda-python'
 import {
+  Grant,
+  IGrantable,
+} from '@aws-cdk/aws-iam'
+import {
   Cdn,
   StackRemovableBucket,
   StackRemovableRepository,
 } from '@engr-lynx/cdk-service-patterns'
 
-// !ToDo: Use projen (https://www.npmjs.com/package/projen)
+// !ToDo: Use projen (https://www.npmjs.com/package/projen).
+// ToDo: Use CDK nag (https://www.npmjs.com/package/cdk-nag).
 // ToDo: These functions should be made into Resources or Constructs implementing IGrantable.
 // ToDo: Unify naming (including prefix usage).
 // ToDo: Coding standards: flatten nested tabs; operator spacing
@@ -207,6 +213,7 @@ export interface S3SourceActionProps extends BasePipelineBuilderProps, S3SourceC
 
 export type SourceActionProps = CodeCommitSourceActionProps | GitHubSourceActionProps | S3SourceActionProps
 
+// ToDo: Extend Action instead?
 export class SourceAction extends Construct {
 
   public readonly action: Action
@@ -458,6 +465,7 @@ export interface ImageBuildActionProps extends BaseBuildProps, ImageBuildConfig 
   readonly postbuildCommands?: string[],
 }
 
+// ToDo: Extend CodeBuildAction instead?
 export class ImageBuildAction extends Construct {
 
   public readonly action: Action
@@ -820,23 +828,40 @@ export interface StageProps {
   readonly actions: Action[],
 }
 
-export interface PipelineProps extends BasePipelineBuilderProps, BasePipelineConfig {
+export interface StartablePipelineProps extends PipelineProps, BasePipelineBuilderProps, BasePipelineConfig {
   readonly stages: StageProps[],
 }
 
-export function createPipeline (scope: Construct, pipelineProps: PipelineProps) {
-  const prefix = pipelineProps.prefix ?? 'Pipeline'
-  const artifactBucketId = prefix + 'ArtifactBucket'
-  const removalPolicy = pipelineProps.deleteArtifactsWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
-  const artifactBucket = new StackRemovableBucket(scope, artifactBucketId, {
-    removalPolicy,
-  })
-  const name = prefix
-  return new Pipeline(scope, name, {
-    stages: pipelineProps.stages,
-    artifactBucket,
-    restartExecutionOnUpdate: pipelineProps.restartExecutionOnUpdate,
-  })
+export class StartablePipeline extends Pipeline {
+
+  constructor(scope: Construct, id: string, props: StartablePipelineProps) {
+    const removalPolicy = props.deleteArtifactsWithApp ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN
+    const artifactBucket = new StackRemovableBucket(scope, 'ArtifactBucket', {
+      removalPolicy,
+    })
+    const pipelineProps = {
+      ...props,
+      artifactBucket,
+    }
+    super(scope, id, pipelineProps)
+  }
+
+  grant(grantee: IGrantable, ...actions: string[]) {
+    const resourceArns = [
+      this.pipelineArn,
+    ]
+    return Grant.addToPrincipal({
+      grantee,
+      actions,
+      resourceArns,
+      scope: this,
+    })
+  }
+
+  grantStart(grantee: IGrantable) {
+    return this.grant(grantee, 'codepipeline:StartPipelineExecution')
+  }
+
 }
 
 export function mapCompute (compute?: ComputeSize) {
