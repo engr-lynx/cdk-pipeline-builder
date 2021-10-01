@@ -538,7 +538,7 @@ export class ImageBuildAction extends Construct {
     const envSecretArgKeys = Object.keys(envSecretArgs ?? {})
     let argKeys: string[] = []
     argKeys = argKeys.concat(envVarArgKeys).concat(envSecretArgKeys)
-    const buildArgs = argKeys.map(argKey => '--build-arg ' + argKey + '=${' + argKey + '}')
+    const buildArgs = argKeys.map(argKey => '--build-arg ' + argKey + '="${' + argKey + '}"')
     const buildCommandParts = [
       'docker build --build-arg BUILDKIT_INLINE_CACHE=1',
     ].concat(buildArgs)
